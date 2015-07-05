@@ -3,7 +3,7 @@ package dblab.legobase
 package frontend
 package optimizer
 
-import OperatorAST._
+import ast._
 
 /* The general interface each query optimizer of legobase must abide to.
  * Observe that since the main optimize function takes as input and returns 

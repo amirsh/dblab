@@ -4,7 +4,7 @@ package frontend
 package optimizer
 
 import schema._
-import OperatorAST._
+import ast._
 
 /* This optimizer is called naive, since it only pushes-up selection predicates to
  * scan operators, and performs no other technique from traditional query optimization

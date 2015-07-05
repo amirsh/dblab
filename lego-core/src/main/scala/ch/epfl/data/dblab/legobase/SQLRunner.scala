@@ -7,7 +7,7 @@ import frontend._
 import frontend.optimizer._
 import utils.Utilities._
 import java.io.PrintStream
-import ch.epfl.data.dblab.legobase.frontend.OperatorAST._
+import ch.epfl.data.dblab.legobase.frontend.ast._
 
 /**
  * The common trait for all Query Runners (either a Query Interpreter or a Query Compiler)
@@ -92,7 +92,11 @@ trait SQLRunner {
         System.out.println(qStmt + "\n\n")
         new SQLSemanticCheckerAndTypeInference(schema).checkAndInfer(qStmt)
         val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(qStmt)
-        val optimizerTree = if (q != "Q19" && q != "Q16" && q != "Q22") new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
+        System.out.println("before optimization:\n" + operatorTree + "\n\n")
+        val optimizer = new NaiveOptimizer(schema)
+        val optimizerTree = if (q != "Q19" && q != "Q16" && q != "Q22") optimizer.optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
+        System.out.println("before optimization:\n" + operatorTree + "\n\n")
+        System.out.println("after optimization:\n")
         //System.out.println(optimizezr.registeredPushedUpSelections.map({ case (k, v) => (k.name, v) }).mkString(","))
         System.out.println(optimizerTree + "\n\n")
 

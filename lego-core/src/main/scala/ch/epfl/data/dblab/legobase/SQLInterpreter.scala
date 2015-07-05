@@ -4,7 +4,7 @@ package dblab.legobase
 import utils._
 import schema._
 import frontend._
-import ch.epfl.data.dblab.legobase.frontend.OperatorAST._
+import ch.epfl.data.dblab.legobase.frontend.ast._
 import storagemanager._
 import scala.reflect._
 import scala.reflect.runtime.universe._

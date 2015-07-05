@@ -4,7 +4,7 @@ package frontend
 
 import schema._
 import scala.reflect._
-import OperatorAST._
+import ast._
 import scala.reflect.runtime.{ universe => ru }
 import ru._
 import ch.epfl.data.dblab.legobase.queryengine.GenericEngine
