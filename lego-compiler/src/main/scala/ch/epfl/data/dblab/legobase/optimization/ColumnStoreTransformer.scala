@@ -16,6 +16,32 @@ import sc.pardis.shallow.utils.DefaultValue
 /**
  * Transforms row layout representation to columnar layout representation.
  *
+ * Example:
+ * {{{
+ *    // RecordA { fieldA: Int, fieldB: String }
+ *    val array = new Array[RecordA](size)
+ *    for(i <- 0 until size) {
+ *      val elem = array(i)
+ *      process(elem.fieldA, elem.fieldB)
+ *    }
+ * }}}
+ * is converted to:
+ * {{{
+ *    val arrayFieldA = new Array[Int](size)
+ *    val arrayFieldB = new Array[String](size)
+ *    for(i <- 0 until size) {
+ *      val elemFieldA = arrayFieldA(i)
+ *      val elemFieldB = arrayFieldB(i)
+ *      process(elemFieldA, elemFieldB)
+ *    }
+ * }}}
+ *
+ * Precondition:
+ * The elements of the array of records that we would like to convert, should not
+ * be set to a null value.
+ * Also, the elements of such array should be set to the value of a mutable variable.
+ *
+ *
  * @param IR the polymorphic embedding trait which contains the reified program.
  * @param settings the compiler settings provided as command line arguments (TODO should be removed)
  */
@@ -129,13 +155,9 @@ class ColumnStoreTransformer(override val IR: LoweringLegoBase, val settings: co
     }
   }
 
-  override def optimize[T: TypeRep](node: Block[T]): Block[T] = {
-    traverseBlock(node)
-    // System.out.println(s"CStore potentialTypes: ${potentialTypes}")
-    // System.out.println(s"CStore forbiddenTypes: ${forbiddenTypes}")
+  override def postAnalyseProgram[T: TypeRep](node: Block[T]): Unit = {
     computeColumnarTypes()
     System.out.println(s">>>CStore columnarTypes: ${columnarTypes}<<<")
-    transformProgram(node)
   }
 
   rewrite += remove {

@@ -15,6 +15,7 @@ case class Schema(tables: ArrayBuffer[Table] = ArrayBuffer(), stats: Statistics 
     case Some(tab) => tab
     case None      => throw new Exception("Table " + name + " not found in schema!")
   }
+  def findTableByType(tpe: PardisType[_]): Option[Table] = tables.find(t => t.name + "Record" == tpe.name)
   def findAttribute(attrName: String): Option[Attribute] = tables.map(t => t.findAttribute(attrName)).flatten.toList match {
     case List() => None //throw new Exception("Attribute " + attrName + " not found in schema!")
     case l      => Some(l.apply(0)) // todo -- OK, but assumes that all attribute names are unique
@@ -42,6 +43,7 @@ case class Table(name: String, attributes: List[Attribute], constraints: ArrayBu
   def notNulls: List[NotNull] = constraints.collect { case nn: NotNull => nn }.toList
   def uniques: List[Unique] = constraints.collect { case unq: Unique => unq }.toList
   def autoIncrement: Option[AutoIncrement] = constraints.collectFirst { case ainc: AutoIncrement => ainc }
+  def continuous: Option[Continuous] = constraints.collectFirst { case cont: Continuous => cont }
   def findAttribute(attrName: String): Option[Attribute] = attributes.find(attr => attr.name == attrName)
 }
 case class Attribute(name: String, dataType: Tpe, constraints: List[Constraint] = List()) {
@@ -68,6 +70,13 @@ case class ForeignKey(foreignKeyName: String, ownTable: String, referencedTable:
 case class NotNull(attribute: Attribute) extends Constraint
 case class Unique(attribute: Attribute) extends Constraint
 case class AutoIncrement(attribute: Attribute) extends Constraint
+
+/**
+ * Specifies that the rows of a given table are continues (which means it is
+ * also a preimary key) with respect to the given attribute. The offset specifies
+ * the offset between the index of a row and the value of the attribute.
+ */
+case class Continuous(attribute: Attribute, offset: Int) extends Constraint
 object Compressed extends Constraint {
   override def toString = "COMPRESSED"
 }
@@ -75,13 +84,20 @@ object Compressed extends Constraint {
 // TODO-GEN: Move this to its own file
 case class Statistics() {
   private val statsMap = new scala.collection.mutable.HashMap[String, Double]()
-  private def format(name: String) = name.replaceAll("Record", "").replaceAll("Type", "").replaceAll("\\(", "_").replaceAll("\\)", "").replaceAll(",", "_").toUpperCase()
+  case class Dependency(name: String, func: Double => Double)
+  private val statsDependencyMap = new scala.collection.mutable.HashMap[String, Dependency]()
+  private def format(name: String) = name.replaceAll("Record", "").replaceAll("Type", "").
+    replaceAll("\\(", "_").replaceAll("\\)", "").replaceAll(",", "_").toUpperCase()
 
   def +=(nameAndValue: (String, Double)) = statsMap += (format(nameAndValue._1) -> nameAndValue._2)
   def +=(name: String, value: Double) = statsMap += (format(name) -> value)
   def mkString(delim: String) = ListMap(statsMap.toSeq.sortBy(_._1): _*).mkString("\n========= STATISTICS =========\n", delim, "\n==============================\n")
   def increase(nameAndValue: (String, Double)) = statsMap += format(nameAndValue._1) -> (statsMap.getOrElse(format(nameAndValue._1), 0.0) + nameAndValue._2)
   def apply(statName: String): Double = statsMap(statName) // TODO-GEN: will die
+  def addDependency(name1: String, name2: String, func: Double => Double): Unit = {
+    statsDependencyMap += format(name1) -> Dependency(format(name2), func)
+    // System.out.println(s"dep added from ${format(name1)} to ${format(name2)}")
+  }
 
   def getCardinality(tableName: String) = statsMap.get("CARDINALITY_" + format(tableName)) match {
     case Some(stat) => stat
@@ -101,27 +117,42 @@ case class Statistics() {
     })
   }
 
+  val QS_MEM_PREFIX = "QS_MEM_"
+
   // TODO-GEN: The three following functions assume 1-N schemas. We have to make this explicit
-  def getJoinOutputEstimation(tableName1: String, tableName2: String): Int = {
-    val cardinality1 = getCardinality(tableName1)
-    val cardinality2 = getCardinality(tableName2)
-    Math.max(cardinality1, cardinality2).toInt
+  def getJoinOutputEstimation(tableNames: List[String]): Double = {
+    val cardinalities = tableNames.map(getCardinality)
+    val statKey = QS_MEM_PREFIX + tableNames.map(format).mkString("_")
+    val value = cardinalities.max
+    statsMap(statKey) = value
+    value
   }
-  def getJoinOutputEstimation(intermediateCardinality: Double, tableName2: String): Double = {
-    Math.max(intermediateCardinality, getCardinality(tableName2))
-  }
-  def getJoinOutputEstimation(tableName2: String, intermediateCardinality: Double): Double = {
-    Math.max(intermediateCardinality, getCardinality(tableName2))
+
+  def warningPerformance(key: String): Unit = {
+    System.out.println(s"${scala.Console.RED}Warning${scala.Console.RESET}: Statistics value for $key not found.")
+    System.out.println("Returning largest cardinality to compensate. This may lead to degraded performance due to unnecessarily large memory pool allocations.")
   }
 
   def getDistinctAttrValues(attrName: String): Int = statsMap.get("DISTINCT_" + attrName) match {
     case Some(stat) => stat.toInt
     case None =>
-      System.out.println(s"${scala.Console.RED}Warning${scala.Console.RESET}: Statistics value for DISTINCT_" + attrName + " not found. Returning largest cardinality to compensate. This may lead to degraded performance due to unnecessarily large memory pool allocations.")
+      warningPerformance("DISTINCT_" + attrName)
       getLargestCardinality().toInt // TODO-GEN: Make this return the cardinality of the corresponding table
   }
 
-  def getEstimatedNumObjectsForType(typeName: String) = statsMap("QS_MEM_" + format(typeName))
+  val CONFLICT_PREFIX = "CONFLICT_"
+
+  def getConflictsAttr(attrName: String): Option[Int] = statsMap.get(CONFLICT_PREFIX + attrName).map(_.toInt)
+
+  def getEstimatedNumObjectsForType(typeName: String): Double = statsMap.get(QS_MEM_PREFIX + format(typeName)) match {
+    case Some(v) => v
+    case None => statsDependencyMap.get(format(typeName)) match {
+      case Some(Dependency(name, func)) => func(getEstimatedNumObjectsForType(name))
+      case None =>
+        warningPerformance(QS_MEM_PREFIX + format(typeName))
+        getLargestCardinality()
+    }
+  }
 
   def removeQuerySpecificStats() {
     // QS stands for Query specific

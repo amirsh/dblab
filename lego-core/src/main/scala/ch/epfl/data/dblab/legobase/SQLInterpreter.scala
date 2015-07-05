@@ -14,9 +14,9 @@ import ch.epfl.data.dblab.legobase.queryengine.GenericEngine
 import sc.pardis.shallow.{ OptimalString, Record, DynamicCompositeRecord }
 
 /**
- * The main object for interpreting queries.
+ * The main object for interpreting SQL queries.
  */
-object LegoInterpreter extends LegoRunner {
+object SQLInterpreter extends SQLRunner {
   def main(args: Array[String]) {
     // Some checks to avoid silly exceptions
     if (args.length < 3) {
