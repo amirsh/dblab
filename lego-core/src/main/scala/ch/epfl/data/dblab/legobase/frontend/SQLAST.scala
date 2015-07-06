@@ -10,6 +10,7 @@ import ru._
  * Based on: https://github.com/stephentu/scala-sql-parser
  */
 
+// TODO should be changed to SQLNode
 trait Node
 case class SelectStatement(projections: Projections,
                            relations: Seq[Relation],

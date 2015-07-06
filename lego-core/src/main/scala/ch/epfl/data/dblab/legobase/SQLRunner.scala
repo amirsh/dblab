@@ -93,12 +93,15 @@ trait SQLRunner {
         new SQLSemanticCheckerAndTypeInference(schema).checkAndInfer(qStmt)
         val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(qStmt)
         System.out.println("before optimization:\n" + operatorTree + "\n\n")
-        val optimizer = new NaiveOptimizer(schema)
+        // val optimizer = new NaiveOptimizer(schema)
+        val optimizer = new LogicalOptimizer(schema)
         val optimizerTree = if (q != "Q19" && q != "Q16" && q != "Q22") optimizer.optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
         System.out.println("before optimization:\n" + operatorTree + "\n\n")
         System.out.println("after optimization:\n")
         //System.out.println(optimizezr.registeredPushedUpSelections.map({ case (k, v) => (k.name, v) }).mkString(","))
         System.out.println(optimizerTree + "\n\n")
+
+        System.exit(0)
 
         executeQuery(optimizerTree, schema)
 

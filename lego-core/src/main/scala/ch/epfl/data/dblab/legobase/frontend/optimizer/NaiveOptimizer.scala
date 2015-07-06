@@ -22,16 +22,30 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
   var operatorList: List[OperatorNode] = _
   val registeredPushedUpSelections = new scala.collection.mutable.HashMap[OperatorNode, Expression]();
 
-  def registerPushUp(cond: Expression, fi: FieldIdent) {
+  def findScanOpForFieldIdent(operators: List[OperatorNode], fi: FieldIdent) = {
     val t = schema.tables.find(t => t.findAttribute(fi.name).isDefined) match {
       case Some(t) => t
       case None    => throw new Exception("BUG: Attribute " + fi.name + " referenced but no table found with it!")
     }
-    val scanOperators = operatorList.filter(_.isInstanceOf[ScanOpNode]).map(_.asInstanceOf[ScanOpNode])
     val scanOpName = t.name + fi.qualifier.getOrElse("")
-    val scanOp = scanOperators.find(so => so.scanOpName == scanOpName) match {
+    val scanOperators = operators.filter(_.isInstanceOf[ScanOpNode]).map(_.asInstanceOf[ScanOpNode])
+    scanOperators.find(so => so.scanOpName == scanOpName)
+  }
+
+  def registerPushUp(cond: Expression, fi: FieldIdent) {
+    // val t = schema.tables.find(t => t.findAttribute(fi.name).isDefined) match {
+    //   case Some(t) => t
+    //   case None    => throw new Exception("BUG: Attribute " + fi.name + " referenced but no table found with it!")
+    // }
+    // val scanOperators = operatorList.filter(_.isInstanceOf[ScanOpNode]).map(_.asInstanceOf[ScanOpNode])
+    // val scanOpName = t.name + fi.qualifier.getOrElse("")
+    // val scanOp = scanOperators.find(so => so.scanOpName == scanOpName) match {
+    //   case Some(op) => op
+    //   case None     => throw new Exception("BUG: Scan op " + scanOpName + " referenced but no such operator exists!")
+    // }
+    val scanOp = findScanOpForFieldIdent(operatorList, fi) match {
       case Some(op) => op
-      case None     => throw new Exception("BUG: Scan op " + scanOpName + " referenced but no such operator exists!")
+      case None     => throw new Exception("BUG: Scan op for field ident " + fi + " referenced but no such operator exists!")
     }
     registeredPushedUpSelections.get(scanOp) match {
       case None => registeredPushedUpSelections += scanOp -> dealiasFieldIdent(cond)
