@@ -47,7 +47,7 @@ case class ScanOpNode(table: Table, scanOpName: String, qualifier: Option[String
 }
 
 case class SelectOpNode(parent: OperatorNode, cond: Expression, isHavingClause: Boolean) extends OperatorNode {
-  override def toString = "SelectOp" + stringify(cond, "CONDITION: ") + stringify(parent)
+  override def toString = "SelectOp" + stringify(cond, "CONDITION: ") + stringify(parent) + stringify(isHavingClause, "IS_HAVING: ")
 }
 
 case class JoinOpNode(left: OperatorNode, right: OperatorNode, clause: Expression, joinType: JoinType, leftAlias: String, rightAlias: String) extends OperatorNode {

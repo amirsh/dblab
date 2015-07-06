@@ -26,9 +26,18 @@ class LogicalOptimizer(schema: Schema) extends Optimizer {
         val so = utils.findScanOpForFieldIdent(opNode.toList, fi)
         so.map(x => cond)
     }
+    def and(cond1: Expression, cond2: Expression): Expression =
+      if (cond1 == cond2)
+        cond1
+      else
+        And(cond1, cond2)
     def generate(node: PardisASTNode): Option[PardisASTNode] = {
       node match {
-        case SelectOpNode(parent, cond, false) if utils.isPrimitiveExpression(cond) =>
+        case SelectOpNode(SelectOpNode(parent, cond2, false), cond, false) =>
+          Some(SelectOpNode(parent, and(cond, cond2), false))
+        case SelectOpNode(ScanOpNode(_, _, _), cond, false) => None
+        case SelectOpNode(parent, cond, false) if extractCondition(cond, parent).nonEmpty =>
+          // System.err.println(s"checking select for $parent")
           parent match {
             case JoinOpNode(l, r, x, y, z, t) if extractCondition(cond, l).nonEmpty ||
               extractCondition(cond, r).nonEmpty =>
@@ -36,9 +45,11 @@ class LogicalOptimizer(schema: Schema) extends Optimizer {
                 case Some(v) => SelectOpNode(node, v, false)
                 case None    => node
               }
-              Some(JoinOpNode(rcr(l), rcr(r), x, y, z, t))
-            case ScanOpNode(_, _, _) => None
-            case _                   => Some(parent.recreate(List(SelectOpNode(parent.children(0), cond, false))))
+              val nl = rcr(l)
+              val nr = rcr(r)
+              // System.out.println(s"join $nl, $nr")
+              Some(JoinOpNode(nl, nr, x, y, z, t))
+            case _ => Some(parent.recreate(List(SelectOpNode(parent.children(0), cond, false))))
           }
         case _ => None
       }
@@ -60,6 +71,10 @@ class LogicalOptimizer(schema: Schema) extends Optimizer {
         case (x: OperatorNode) :: xs =>
           result = x
           rounds += 1
+          if (rounds % 10 == 0) {
+            System.out.println(s"round $rounds")
+            System.out.println(s"result:\n $result")
+          }
           fixPoint()
         case _ =>
           ()
