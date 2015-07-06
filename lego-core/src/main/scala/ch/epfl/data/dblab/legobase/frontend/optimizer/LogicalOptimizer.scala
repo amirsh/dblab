@@ -20,7 +20,12 @@ class LogicalOptimizer(schema: Schema) extends Optimizer {
         case (None, Some(rv))     => Some(rv)
         case _                    => None
       }
-      case Or(_, _) => ???
+      case Or(l, r) => (extractCondition(l, opNode), extractCondition(r, opNode)) match {
+        // case (Some(lv), Some(rv)) => Some(Or(lv, rv))
+        case (Some(lv), Some(rv)) if utils.isPrimitiveExpression(l) &&
+          utils.isPrimitiveExpression(r) => Some(Or(lv, rv))
+        case _ => None
+      }
       case _ if utils.isPrimitiveExpression(cond) =>
         val fi = utils.processPrimitiveExpression(cond)
         val so = utils.findScanOpForFieldIdent(opNode.toList, fi)

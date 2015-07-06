@@ -96,9 +96,13 @@ trait SQLRunner {
         // val optimizer = new NaiveOptimizer(schema)
         val optimizer = new LogicalOptimizer(schema)
         val optimizerTree = if (q != "Q19" && q != "Q16" && q != "Q22") optimizer.optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
-        System.out.println("after optimization:\n")
+        System.out.println("after optimization lg:\n")
         //System.out.println(optimizezr.registeredPushedUpSelections.map({ case (k, v) => (k.name, v) }).mkString(","))
         System.out.println(optimizerTree + "\n\n")
+        System.out.println("after optimization naive:\n")
+        val optimizerTree2 = if (q != "Q19" && q != "Q16" && q != "Q22") new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
+        System.out.println(optimizerTree2 + "\n\n")
+        System.out.println("Equal?" + (optimizerTree == optimizerTree2))
 
         System.exit(0)
 
