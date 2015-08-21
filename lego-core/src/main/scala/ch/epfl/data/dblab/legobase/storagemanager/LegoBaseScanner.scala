@@ -22,20 +22,22 @@ class LegobaseScanner(filename: String) {
   @dontLift private val br: BufferedReader = new BufferedReader(new FileReader(filename))
   @dontLift private val sdf = new SimpleDateFormat("yyyy-MM-dd");
 
+  def readSingleCharFromFile() = br.read()
+
   def next_int() = {
     var number = 0
     var signed = false
 
     intDigits = 0
-    byteRead = br.read()
+    byteRead = readSingleCharFromFile()
     if (byteRead == '-') {
       signed = true
-      byteRead = br.read()
+      byteRead = readSingleCharFromFile()
     }
     while (Character.isDigit(byteRead)) {
       number *= 10
       number += byteRead - '0'
-      byteRead = br.read()
+      byteRead = readSingleCharFromFile()
       intDigits = intDigits + 1
     }
     //if ((byteRead != delimiter) && (byteRead != '.') && (byteRead != '\n'))
@@ -60,8 +62,9 @@ class LegobaseScanner(filename: String) {
   }
 
   def next_char() = {
-    byteRead = br.read()
-    val del = br.read() //delimiter
+    byteRead = readSingleCharFromFile()
+    val del = delimiter
+    if (byteRead != delimiter) readSingleCharFromFile()
     //if ((del != delimiter) && (del != '\n'))
     //throw new RuntimeException("Expected delimiter after char. Not found. Sorry!")
     byteRead.asInstanceOf[Char]
@@ -72,11 +75,11 @@ class LegobaseScanner(filename: String) {
   }
 
   def next(buf: Array[Byte], offset: Int) = {
-    byteRead = br.read()
+    byteRead = readSingleCharFromFile()
     var cnt = offset
     while (br.ready() && (byteRead != delimiter) && (byteRead != '\n')) {
       buf(cnt) = byteRead.asInstanceOf[Byte]
-      byteRead = br.read()
+      byteRead = readSingleCharFromFile()
       cnt += 1
     }
     cnt

@@ -18,6 +18,11 @@ import sc.pardis.shallow.{ OptimalString, Record, DynamicCompositeRecord }
  */
 object LegoInterpreter extends LegoRunner {
   def main(args: Array[String]) {
+    /* NEW EXECUTION COMMAND FORMAT */
+    run(args);
+    return ;
+
+    /* OLD EXECUTION COMMAND FORMAT */
     // Some checks to avoid silly exceptions
     if (args.length < 3) {
       System.out.println("ERROR: Invalid number (" + args.length + ") of command line arguments!")
@@ -49,11 +54,13 @@ object LegoInterpreter extends LegoRunner {
   // Query interpretation methods
   val decimalFormatter = new java.text.DecimalFormat("###.########");
 
-  def recursiveGetField(name: String, t: Record, t2: Record = null): Any = {
+  def recursiveGetField(n: String, alias: Option[String], t: Record, t2: Record = null): Any = {
     var stop = false
+    val name = alias.getOrElse("") + n
 
     def searchRecordFields(rec: LegobaseRecord): Option[Any] = {
       var res: Option[Any] = None
+
       for (f <- rec.getNestedRecords() if !stop) {
         searchRecord(f) match {
           case Some(r) => res = Some(r); stop = true;
@@ -80,11 +87,21 @@ object LegoInterpreter extends LegoRunner {
     searchRecord(t) match {
       case Some(res) => res // rec.getField(name).get
       case None =>
-        if (t2 == null) throw new Exception("BUG: Searched for field " + name + " in " + t + " and couldn't find it! (and no other record available to search in)")
-        searchRecord(t2) match {
-          case None =>
-            throw new Exception("BUG: Searched for field " + name + " in " + t + " and couldn't find it! (and no other record available to search in)")
-          case Some(res) => res //rec.getField(name).get
+        if (t2 == null) {
+          if (alias.isDefined) recursiveGetField(n, None, t) // Last chance, search without alias
+          else throw new Exception("BUG: Searched for field " + n + " in " + t + " and couldn't find it! (and no other record available to search in)")
+        } else {
+
+          searchRecord(t2) match {
+            case None =>
+              alias match {
+                case Some(al) =>
+                  recursiveGetField(n, None, t, t2) // Last chance, search with alias
+                case None =>
+                  throw new Exception("BUG: Searched for field " + n + " in " + t + " and couldn't find it! (and no other record available to search in)")
+              }
+            case Some(res) => res //rec.getField(name).get
+          }
         }
     }
   }
@@ -111,12 +128,12 @@ object LegoInterpreter extends LegoRunner {
       case 0 =>
         val fieldNames = rec.asInstanceOf[LegobaseRecord].getFieldNames
         fieldNames.foreach(fn => {
-          val f = recursiveGetField(fn, rec)
+          val f = recursiveGetField(fn, None, rec)
           printMembers(f, f.getClass)
         })
       case _ =>
         order.foreach(n => {
-          val f = recursiveGetField(n, rec)
+          val f = recursiveGetField(n, None, rec)
           printMembers(f, f.getClass)
         })
     }
@@ -172,7 +189,7 @@ object LegoInterpreter extends LegoRunner {
   val subqueryInitializedMap = new scala.collection.mutable.HashMap[OperatorNode, SubquerySingleResult[_]]()
   def parseExpression[A: TypeTag](e: Expression, t: Record, t2: Record = null): A = (e match {
     // Literals
-    case FieldIdent(qualifier, name, _) => recursiveGetField(qualifier.getOrElse("") + name, t, t2)
+    case FieldIdent(qualifier, name, _) => recursiveGetField(name, qualifier, t, t2)
     case DateLiteral(v)                 => v
     case FloatLiteral(v)                => v
     case DoubleLiteral(v)               => v

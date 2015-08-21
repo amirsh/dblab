@@ -13,6 +13,10 @@ object Config {
   var sf: Double = _
   /** Number of the repititions of running a query */
   val numRuns: scala.Int = 1
+  /** Specifies whether to obtain statistics during schema definition */
+  val gatherStats: Boolean = false
+  /** Specifies whether to show information about the query plan generation of LegoBase during execution */
+  val debugQueryPlan: Boolean = false
 
   /* Code generation info */
   sealed trait CodeGenerationLang

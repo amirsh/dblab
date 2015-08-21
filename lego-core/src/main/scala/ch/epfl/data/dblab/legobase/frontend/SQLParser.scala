@@ -26,47 +26,30 @@ object SQLParser extends StandardTokenParsers {
     }
   }
 
-  def extractRelationsFromJoinTree(joinTree: Relation): Seq[Relation] = {
-    joinTree match {
-      case Join(left, right, _, _) =>
-        extractRelationsFromJoinTree(left) ++ extractRelationsFromJoinTree(right)
-      case tbl: SQLTable => Seq(tbl)
-      case sq: Subquery => sq.subquery.joinTree match {
-        case Some(tr) => extractRelationsFromJoinTree(tr)
-        case None     => sq.subquery.relations
-      }
-    }
-  }
-
   def parseSelectStatement: Parser[SelectStatement] = (
-    "SELECT" ~> parseProjections ~ "FROM" ~ parseRelations ~ parseWhere.? ~ parseGroupBy.? ~ parseHaving.? ~ parseOrderBy.? ~ parseLimit.? <~ ";".? ^^ {
-      case pro ~ _ ~ tab ~ whe ~ grp ~ hav ~ ord ~ lim => {
-        val rel = tab.foldLeft(Seq[Relation]())((list, tb) => list ++ extractRelationsFromJoinTree(tb))
-        val aliases = (pro match {
-          case ep: ExpressionProjections => ep.lst.zipWithIndex.filter(p => p._1._2.isDefined).map(al => (al._1._1, al._1._2.get, al._2))
-          case ac: AllColumns            => Seq()
-        })
-        val hasJoin = tab(0).isInstanceOf[Join]
-        //System.out.println(tab)
-        hasJoin match {
-          case true => tab.size match {
-            case 1 => SelectStatement(pro, rel, Some(tab(0)), whe, grp, hav, ord, lim, aliases)
-            case _ => throw new Exception("BUG: Invalid number of join trees detected!")
-          }
-          case false => tab.size match {
-            case 1 => SelectStatement(pro, rel, Some(tab(0)), whe, grp, hav, ord, lim, aliases)
-            case _ => throw new Exception("Error in query: There are multiple input relations but no join! Cannot process such query statement!")
-          }
-        }
+    parseAllCTEs ~ "SELECT" ~ parseProjections ~ "FROM" ~ parseRelations ~ parseWhere.? ~ parseGroupBy.? ~ parseHaving.? ~ parseOrderBy.? ~ parseLimit.? <~ ";".? ^^ {
+      case withs ~ _ ~ pro ~ _ ~ tab ~ whe ~ grp ~ hav ~ ord ~ lim => {
+        val rel = extractAllRelationsFromJoinTrees(tab)
+        val aliases = extractAllAliasesFromProjections(pro) ++ withs.map(w => extractAllAliasesFromProjections(w.subquery.projections)).flatten
+        SelectStatement(withs, pro, rel, Some(tab), whe, grp, hav, ord, lim, aliases)
       }
     })
+
+  def parseAllCTEs: Parser[List[Subquery]] =
+    opt("WITH" ~> rep1sep(parseCTE, ",")) ^^ {
+      case Some(ctes) => ctes
+      case None       => List[Subquery]()
+    }
+  def parseCTE: Parser[Subquery] =
+    ident ~ "AS" ~ "(" ~ parseSelectStatement <~ ")" ^^
+      { case name ~ _ ~ _ ~ stmt => Subquery(stmt, name) }
 
   def parseProjections: Parser[Projections] = (
     "*" ^^^ AllColumns()
     | rep1sep(parseAliasedExpression, ",") ^^ { case lst => ExpressionProjections(lst) })
 
   def parseAliasedExpression: Parser[(Expression, Option[String])] = (
-    parseExpression ~ ("AS" ~> ident).? ^^ { case expr ~ alias => (expr, alias) })
+    parseExpression ~ ("AS".? ~> ident).? ^^ { case expr ~ alias => (expr, alias) })
 
   def parseExpression: Parser[Expression] = parseCase | parseOr
 
@@ -142,7 +125,7 @@ object SQLParser extends StandardTokenParsers {
     | "SUM" ~> "(" ~> parseExpression <~ ")" ^^ (Sum(_))
     | "AVG" ~> "(" ~> parseExpression <~ ")" ^^ (Avg(_))
     | "YEAR" ~> "(" ~> parseExpression <~ ")" ^^ (Year(_))
-    | "SUBSTRING" ~> "(" ~> parseExpression ~ "," ~ parseExpression ~ "," ~ parseExpression <~ ")" ^^ {
+    | ("SUBSTRING" | "SUBSTR") ~> "(" ~> parseExpression ~ "," ~ parseExpression ~ "," ~ parseExpression <~ ")" ^^ {
       case str ~ _ ~ idx1 ~ _ ~ idx2 => Substring(str, idx1, idx2)
     })
 
@@ -208,6 +191,25 @@ object SQLParser extends StandardTokenParsers {
   def parseLimit: Parser[Limit] = (
     "LIMIT" ~> numericLit ^^ { case lim => Limit(lim.toInt) })
 
+  def extractAllAliasesFromProjections(pro: Projections) = pro match {
+    case ep: ExpressionProjections => ep.lst.zipWithIndex.filter(p => p._1._2.isDefined).map(al => (al._1._1, al._1._2.get, al._2))
+    case ac: AllColumns            => Seq()
+  }
+  def extractAllRelationsFromJoinTrees(joinTrees: Seq[Relation]) =
+    joinTrees.foldLeft(Seq[Relation]())((list, tb) => list ++ extractRelationsFromJoinTree(tb))
+
+  def extractRelationsFromJoinTree(joinTree: Relation): Seq[Relation] = {
+    joinTree match {
+      case Join(left, right, _, _) =>
+        extractRelationsFromJoinTree(left) ++ extractRelationsFromJoinTree(right)
+      case tbl: SQLTable => Seq(tbl)
+      case sq: Subquery => sq.subquery.joinTrees match {
+        case Some(tr) => tr.flatMap(extractRelationsFromJoinTree(_))
+        case None     => sq.subquery.relations
+      }
+    }
+  }
+
   class SqlLexical extends StdLexical {
     case class FloatLit(chars: String) extends Token {
       override def toString = chars
@@ -246,11 +248,11 @@ object SQLParser extends StandardTokenParsers {
     elem("decimal", _.isInstanceOf[lexical.FloatLit]) ^^ (_.chars)
 
   lexical.reserved += (
-    "SELECT", "AS", "OR", "AND", "GROUP", "ORDER", "BY", "WHERE",
+    "SELECT", "AS", "OR", "AND", "GROUP", "ORDER", "BY", "WHERE", "WITH",
     "JOIN", "ASC", "DESC", "FROM", "ON", "NOT", "HAVING",
     "EXISTS", "BETWEEN", "LIKE", "IN", "NULL", "LEFT", "RIGHT",
     "FULL", "OUTER", "SEMI", "INNER", "ANTI", "COUNT", "SUM", "AVG", "MIN", "MAX", "YEAR",
-    "DATE", "TOP", "LIMIT", "CASE", "WHEN", "THEN", "ELSE", "END", "SUBSTRING")
+    "DATE", "TOP", "LIMIT", "CASE", "WHEN", "THEN", "ELSE", "END", "SUBSTRING", "SUBSTR")
 
   lexical.delimiters += (
     "*", "+", "-", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";")

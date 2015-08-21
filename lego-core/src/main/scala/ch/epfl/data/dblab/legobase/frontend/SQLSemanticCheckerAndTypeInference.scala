@@ -8,7 +8,7 @@ import scala.reflect.runtime.{ universe => ru }
 import ru._
 
 class SQLSemanticCheckerAndTypeInference(schema: Schema) {
-  var aliasesList: Seq[(Expression, String, Int)] = _
+  var aliasesList: Seq[(Expression, String, Int)] = Seq()
 
   // TODO: Maybe this should be removed if there is a better solution for it
   def typeToTypeTag(tp: Tpe) = tp match {
@@ -48,8 +48,13 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
           fi.setTp(typeToTypeTag(a.dataType))
         case None =>
           aliasesList.find(al => al._2 == name) match {
-            case Some(al) => fi.setTp(al._1.tp)
-            case None     => //throw new Exception("Attribute " + name + " referenced in SQL query does not exist in any relation.")
+            case Some(al) => al._1.tp match {
+              case null =>
+                checkAndInferExpr(al._1); fi.setTp(al._1.tp)
+              case _    => fi.setTp(al._1.tp)
+            }
+            case None =>
+            //throw new Exception("Attribute " + name + " referenced in SQL query does not exist in any relation.")
           }
       }
     // Arithmetic Operators
@@ -152,7 +157,7 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
   }
 
   def checkAndInfer(sqlTree: SelectStatement) {
-    aliasesList = sqlTree.aliases
+    aliasesList = sqlTree.aliases ++ aliasesList
     sqlTree.where match {
       case Some(expr) => checkAndInferExpr(expr)
       case None       =>
@@ -169,8 +174,8 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       case Some(OrderBy(listExpr)) => listExpr.foreach(expr => checkAndInferExpr(expr._1))
       case None                    =>
     }
-    sqlTree.joinTree match {
-      case Some(tr) => checkAndInferJoinTree(tr)
+    sqlTree.joinTrees match {
+      case Some(tr) => tr.foreach(checkAndInferJoinTree(_))
       case None     =>
     }
     sqlTree.having match {

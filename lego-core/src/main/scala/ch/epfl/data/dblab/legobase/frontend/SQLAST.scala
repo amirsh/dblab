@@ -11,9 +11,10 @@ import ru._
  */
 
 trait Node
-case class SelectStatement(projections: Projections,
+case class SelectStatement(withs: Seq[Subquery],
+                           projections: Projections,
                            relations: Seq[Relation],
-                           joinTree: Option[Relation],
+                           joinTrees: Option[Seq[Relation]],
                            where: Option[Expression],
                            groupBy: Option[GroupBy],
                            having: Option[Having],
@@ -22,9 +23,10 @@ case class SelectStatement(projections: Projections,
                            aliases: Seq[(Expression, String, Int)]) extends Node with Expression {
   override def toString() = {
     "      SQL TREE\n====================" +
+      "\n\tWITH             :" + withs.mkString(",\n\t") +
       "\n\tPROJECTIONS      :" + projections.toString +
       "\n\tRELATIONS        :" + relations.mkString(",") +
-      "\n\tJOINTREE         :" + joinTree.getOrElse("").toString +
+      "\n\tJOINTREE         :" + joinTrees.getOrElse("").toString +
       "\n\tWHERE CLAUSES    :" + where.getOrElse("").toString +
       "\n\tGROUP BY CLAUSES :" + groupBy.getOrElse("").toString +
       "\n\tHAVING           :" + having.getOrElse("").toString +

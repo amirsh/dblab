@@ -8,6 +8,7 @@ import utils._
 import sc.pardis.types._
 import scala.collection.immutable.Set
 import scala.collection.mutable.ArrayBuffer
+import sys.process._
 
 object DDLInterpreter {
   var currSchema: Option[Schema] = None
@@ -53,8 +54,21 @@ object DDLInterpreter {
         getCurrSchema.tables += new Table(tableName, colDef, ArrayBuffer(),
           tablePath, tableCardinality)
         interpret(cons.toList)
-        // Update cardinality stat for this schema
-        getCurrSchema.stats += "CARDINALITY_" + tableName -> tableCardinality
+        if (Config.gatherStats) {
+          // Update cardinality stat for this schema
+          getCurrSchema.stats += "CARDINALITY_" + tableName -> tableCardinality
+          // Update stats for each column -- TODO -- This should be in the generated code but OK for now
+          val colNames = cols.map(_.name)
+          colNames.zipWithIndex.foreach(cn => {
+            cn match {
+              case (name, idx) => {
+                println("Getting statistics for column " + name + " of table " + tableName + "...")
+                val res = (("cut -d | -f " + (idx + 1) + " " + tablePath) #| "sort" #| "uniq" #| "wc -l").!!
+                getCurrSchema.stats + "DISTINCT_" + name -> res
+              }
+            }
+          })
+        }
         getCurrSchema
       case ConstraintOp(add, cons) => add match {
         case true => /* add */

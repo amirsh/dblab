@@ -11,12 +11,21 @@ import ch.epfl.data.dblab.legobase.queryengine.GenericEngine
 
 class SQLTreeToOperatorTreeConverter(schema: Schema) {
 
+  val temporaryViewMap = new scala.collection.mutable.HashMap[String, OperatorNode]
+
   def createScanOperators(sqlTree: SelectStatement) = {
     sqlTree.relations.map(r => {
-      val table = schema.findTable(r match {
+      val tableName = r match {
         case t: SQLTable => t.name
-      })
-      ScanOpNode(table, table.name + r.asInstanceOf[SQLTable].alias.getOrElse(""), r.asInstanceOf[SQLTable].alias)
+      }
+
+      temporaryViewMap.contains(tableName) match {
+        case true => tableName -> temporaryViewMap(tableName)
+        case false =>
+          val table = schema.findTable(tableName)
+          val scanOpName = table.name + r.asInstanceOf[SQLTable].alias.getOrElse("")
+          scanOpName -> ScanOpNode(table, scanOpName, r.asInstanceOf[SQLTable].alias)
+      }
     })
   }
 
@@ -32,29 +41,35 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
     (leftAlias.getOrElse(""), rightAlias.getOrElse(""))
   }
 
-  def parseJoinTree(e: Option[Relation], scanOps: Seq[ScanOpNode]): OperatorNode = e match {
+  def parseJoinTree(e: Option[Relation], inputOps: Seq[(String, OperatorNode)]): OperatorNode = e match {
     case None =>
-      if (scanOps.size != 1)
+      if (inputOps.size != 1)
         throw new Exception("Error in query: There are multiple input relations but no join! Cannot process such query statement!")
-      else scanOps(0)
+      else inputOps(0)._2
     case Some(joinTree) => joinTree match {
       case j: Join =>
-        val leftOp = parseJoinTree(Some(j.left), scanOps)
-        val rightOp = parseJoinTree(Some(j.right), scanOps)
+        val leftOp = parseJoinTree(Some(j.left), inputOps)
+        val rightOp = parseJoinTree(Some(j.right), inputOps)
         val (leftAlias, rightAlias) = parseJoinAliases(leftOp, rightOp)
         new JoinOpNode(leftOp, rightOp, j.clause, j.tpe, leftAlias, rightAlias)
       case r: SQLTable =>
-        scanOps.find(so => so.scanOpName == r.name + r.alias.getOrElse("")) match {
-          case Some(t) => t
-          case None    => throw new Exception("LegoBase Frontend BUG: Table referenced in join but a Scan operator for this table was not constructed!")
+        inputOps.find(so => so._1 == r.name + r.alias.getOrElse("")) match {
+          case Some(t) => t._2
+          case None => {
+            inputOps.find(so => so._1 == r.name) match {
+              case Some(t) => t._2 // TODO -- Is this correct?
+              case None    => throw new Exception("LegoBase Frontend BUG: Table referenced in join but neither a Scan or a View operator for this table was not constructed!")
+            }
+          }
         }
       case sq: Subquery => SubqueryNode(createMainOperatorTree(sq.subquery))
     }
   }
 
   def parseWhereClauses(e: Option[Expression], parentOp: OperatorNode): OperatorNode = e match {
-    case Some(expr) => new SelectOpNode(parentOp, expr, false)
-    case None       => parentOp
+    case Some(expr) =>
+      analyzeExprForSubquery(expr, parentOp, false);
+    case None => parentOp
   }
 
   def getExpressionName(expr: Expression) = {
@@ -126,25 +141,33 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
   }
 
   // TODO -- needs to be generalized and expanded with more cases
-  def analyzeExprForSubquery(expr: Expression, parentOp: OperatorNode) = expr match {
+  def analyzeExprForSubquery(expr: Expression, parentOp: OperatorNode, isHaving: Boolean): SelectOpNode = expr match {
     case GreaterThan(e, (sq: SelectStatement)) =>
       val rootOp = SubquerySingleResultNode(createMainOperatorTree(sq))
       val rhs = GetSingleResult(rootOp)
       rhs.setTp(typeTag[Double]) // FIXME
-      SelectOpNode(parentOp, GreaterThan(e, rhs), true)
-    case GreaterThan(e1, e2) => SelectOpNode(parentOp, GreaterThan(e1, e2), true)
+      SelectOpNode(parentOp, GreaterThan(e, rhs), isHaving)
+    //case GreaterThan(e1, e2) => SelectOpNode(parentOp, GreaterThan(e1, e2), true)
     case LessThan(e, (sq: SelectStatement)) =>
       val rootOp = SubquerySingleResultNode(createMainOperatorTree(sq))
       val rhs = GetSingleResult(rootOp)
       rhs.setTp(typeTag[Double]) // FIXME
-      SelectOpNode(parentOp, LessThan(e, rhs), true)
-    case _ => parentOp
+      SelectOpNode(parentOp, LessThan(e, rhs), isHaving)
+    case And(e1, e2) => {
+      // TODO -- Not the best of solutions, but OK for now (this func needs to break into two, one for analysis, one for construction of nodes)
+      val left = analyzeExprForSubquery(e1, parentOp, isHaving)
+      val right = analyzeExprForSubquery(e2, parentOp, isHaving)
+      SelectOpNode(parentOp, And(left.cond, right.cond), isHaving)
+    }
+    case dflt @ _ =>
+      //System.out.println("Do not know how to handle " + dflt + "... Treating it as default..."); 
+      SelectOpNode(parentOp, expr, isHaving)
   }
 
   def parseHaving(having: Option[Having], parentOp: OperatorNode): OperatorNode = {
     having match {
       case Some(Having(expr)) =>
-        analyzeExprForSubquery(expr, parentOp);
+        analyzeExprForSubquery(expr, parentOp, true);
       case None => parentOp
     }
   }
@@ -176,8 +199,16 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
   }
 
   def createMainOperatorTree(sqlTree: SelectStatement): OperatorNode = {
-    val scanOps = createScanOperators(sqlTree)
-    val hashJoinOp = parseJoinTree(sqlTree.joinTree, scanOps.toSeq)
+    sqlTree.withs.foreach(w => {
+      temporaryViewMap += w.alias -> createMainOperatorTree(w.subquery)
+    })
+
+    val inputOps = createScanOperators(sqlTree)
+    /* We assume that a normalizer has created a single joinTree
+     * from all the input relations specified in the select statement.
+     * Thus we can just get the first element in this sequence.
+     */
+    val hashJoinOp = parseJoinTree(Some(sqlTree.joinTrees.get(0)), inputOps.toSeq)
     val selectOp = parseWhereClauses(sqlTree.where, hashJoinOp)
     val aggOp = parseAggregations(sqlTree.projections, sqlTree.groupBy, selectOp)
     val orderByOp = parseOrderBy(sqlTree.orderBy, aggOp)

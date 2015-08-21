@@ -14,9 +14,10 @@ import ch.epfl.data.dblab.legobase.frontend.OperatorAST._
  */
 trait LegoRunner {
   var currQuery: java.lang.String = ""
+  var queryName: java.lang.String = ""
   Config.checkResults = true
 
-  def getOutputName = currQuery + "Output.txt"
+  def getOutputName = queryName + "Output.txt"
 
   /*
    * This method should be implemented by a query interpreter to interpret the given
@@ -32,85 +33,80 @@ trait LegoRunner {
    * @param args the setting arguments passed through command line
    */
   def run(args: Array[String]) {
+    // Set the folder containing data
+    Config.datapath = args(0);
+    val dataFolder = new java.io.File(Config.datapath)
+    if (!dataFolder.exists || !dataFolder.isDirectory) {
+      println("Data folder " + Config.datapath + " does not exist or is not a directory. Cannot proceed");
+      return
+    }
 
-    val sf = if (args(1).contains(".")) args(1).toDouble.toString else args(1).toInt.toString
-    Config.sf = sf.toDouble
-    Config.datapath = args(0) + "/sf" + sf + "/"
+    val filesToExecute = args.tail.map(arg => {
+      val f = new java.io.File(arg)
+      if (!f.exists) {
+        println("Warning: Command line parameter " + f + " is not a file or directory. Skipping this argument...")
+        List()
+      } else if (f.isDirectory) f.listFiles.map(arg + "/" + _.getName).toList
+      else List(arg)
+    }).flatten.groupBy(f => f.substring(f.lastIndexOf('.'), f.length))
 
-    val excludedQueries = Nil
+    // TODO -- Ideally, the following should not be dependant on the file extension, but OK for now.
+    for (f <- (filesToExecute.get(".ddl") ++ filesToExecute.get(".ri")).flatten.toList) {
+      System.out.println("Executing file " + f)
+      val ddlDefStr = scala.io.Source.fromFile(f).mkString
+      val ddlObj = DDLParser.parse(ddlDefStr)
+      DDLInterpreter.interpret(ddlObj)
+    }
+    //System.out.println(DDLInterpreter.getCurrSchema)
 
-    val ddlDefStr = scala.io.Source.fromFile("tpch/dss.ddl").mkString
-    val schemaDDL = DDLParser.parse(ddlDefStr)
-    val constraintsDefStr = scala.io.Source.fromFile("tpch/dss.ri").mkString
-    val constraintsDDL = DDLParser.parse(constraintsDefStr)
-    val schemaWithConstraints = schemaDDL ++ constraintsDDL
-    val schema = DDLInterpreter.interpret(schemaWithConstraints)
-    System.out.println(schema)
+    // TODO -- That must be calculated as well in DDLInterpreter
+    if (Config.gatherStats) {
+      DDLInterpreter.getCurrSchema.stats += "NUM_YEARS_ALL_DATES" -> 7
+      System.out.println(DDLInterpreter.getCurrSchema.stats.mkString("\n"))
+    }
 
-    //val dropDefStr = scala.io.Source.fromFile("/home/klonatos/Work/dblab/tpch/drop.sql").mkString
-    //val dropDDL = DDLParser.parse(dropDefStr)
-    //DDLInterpreter.interpret(dropDDL)
-    //System.out.println(finalSchema)
-
-    // TODO: These stats will die soon
-    schema.stats += "DISTINCT_L_SHIPMODE" -> 7
-    schema.stats += "DISTINCT_L_RETURNFLAG" -> 3
-    schema.stats += "DISTINCT_L_LINESTATUS" -> 2
-    schema.stats += "DISTINCT_L_ORDERKEY" -> schema.stats.getCardinality("LINEITEM")
-    schema.stats += "DISTINCT_L_PARTKEY" -> schema.stats.getCardinality("PART")
-    schema.stats += "DISTINCT_L_SUPPKEY" -> schema.stats.getCardinality("SUPPLIER")
-    schema.stats += "DISTINCT_N_NAME" -> 25
-    schema.stats += "DISTINCT_O_SHIPPRIORITY" -> 1
-    schema.stats += "DISTINCT_O_ORDERDATE" -> 365 * 7 // 7-whole years
-    schema.stats += "DISTINCT_O_ORDERPRIORITY" -> 5
-    schema.stats += "DISTINCT_O_ORDERKEY" -> schema.stats.getCardinality("LINEITEM")
-    schema.stats += "DISTINCT_O_CUSTKEY" -> schema.stats.getCardinality("CUSTOMER")
-    schema.stats += "DISTINCT_P_PARTKEY" -> schema.stats.getCardinality("PART")
-    schema.stats += "DISTINCT_P_BRAND" -> 25
-    schema.stats += "DISTINCT_P_SIZE" -> 50
-    schema.stats += "DISTINCT_P_TYPE" -> 150
-    schema.stats += "DISTINCT_PS_PARTKEY" -> schema.stats.getCardinality("PART")
-    schema.stats += "DISTINCT_PS_SUPPKEY" -> schema.stats.getCardinality("SUPPLIER")
-    schema.stats += "DISTINCT_PS_AVAILQTY" -> 9999
-    schema.stats += "DISTINCT_S_NAME" -> schema.stats.getCardinality("SUPPLIER")
-    schema.stats += "DISTINCT_S_NATIONKEY" -> 25
-    schema.stats += "DISTINCT_C_CUSTKEY" -> schema.stats.getCardinality("CUSTOMER")
-    schema.stats += "DISTINCT_C_NAME" -> schema.stats.getCardinality("CUSTOMER")
-    schema.stats += "DISTINCT_C_NATIONKEY" -> 25
-    schema.stats += "NUM_YEARS_ALL_DATES" -> 7
-
-    System.out.println(schema.stats.mkString("\n"))
-
-    val queries: scala.collection.immutable.List[String] =
-      if (args.length >= 3 && args(2) == "testsuite-scala") (for (i <- 1 to 22 if !excludedQueries.contains(i)) yield "Q" + i).toList
-      else if (args.length >= 3 && args(2) == "testsuite-c") (for (i <- 1 to 22 if !excludedQueries.contains(i)) yield "Q" + i + "_C").toList
-      else args.drop(2).filter(x => !x.startsWith("+") && !x.startsWith("-")).toList
-    for (q <- queries) {
+    // Now run all queries specified
+    val schema = DDLInterpreter.getCurrSchema
+    val ejNorm = new EquiJoinNormalizer(schema)
+    for (q <- filesToExecute.get(".sql").toList.flatten) {
       currQuery = q
+      queryName = q.substring(q.lastIndexOf('/') + 1, q.length).replace(".sql", "")
+      println("Executing file " + q + " (queryName = " + queryName + ")")
+
       Console.withOut(new PrintStream(getOutputName)) {
         //executeQuery(currQuery, schema)
-        val qStmt = SQLParser.parse(scala.io.Source.fromFile("tpch/" + currQuery + ".sql").mkString)
-        System.out.println(qStmt + "\n\n")
-        new SQLSemanticCheckerAndTypeInference(schema).checkAndInfer(qStmt)
-        val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(qStmt)
-        val optimizerTree = if (q != "Q19" && q != "Q16" && q != "Q22") new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
-        //System.out.println(optimizezr.registeredPushedUpSelections.map({ case (k, v) => (k.name, v) }).mkString(","))
-        System.out.println(optimizerTree + "\n\n")
+        val qStmt = SQLParser.parse(scala.io.Source.fromFile(q).mkString)
+        if (Config.debugQueryPlan)
+          System.out.println(qStmt + "\n\n")
+
+        val normalizedqStmt = ejNorm.normalize(CTENormalizer.normalize(qStmt))
+        if (Config.debugQueryPlan)
+          System.out.println("After normalization:\n" + normalizedqStmt + "\n\n")
+
+        new SQLSemanticCheckerAndTypeInference(schema).checkAndInfer(normalizedqStmt)
+        val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(normalizedqStmt)
+        val optimizerTree = if ((!q.contains("tpcds")) && queryName != "Q19" && queryName != "Q16" && queryName != "Q22") new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
+        //val optimizerTree = operatorTree // TODO -- FIX OPTIMIZER
+        if (Config.debugQueryPlan)
+          System.out.println(optimizerTree + "\n\n")
 
         executeQuery(optimizerTree, schema)
 
         // Check results
         if (Config.checkResults) {
-          val getResultFileName = "results/" + currQuery + ".result_sf" + sf
+          val resultFile = filesToExecute.get(".result").toList.flatten.filter(f => f.contains(queryName + ".result")) match {
+            case elem :: _ => elem
+            case List()    => ""
+          }
           val resq = scala.io.Source.fromFile(getOutputName).mkString
-          if (new java.io.File(getResultFileName).exists) {
+          if (new java.io.File(resultFile).exists) {
             val resc = {
-              val str = scala.io.Source.fromFile(getResultFileName).mkString
+              val str = scala.io.Source.fromFile(resultFile).mkString
               str * Config.numRuns
             }
             if (resq != resc) {
               System.out.println("-----------------------------------------")
-              System.out.println("QUERY" + q + " DID NOT RETURN CORRECT RESULT!!!")
+              System.out.println("QUERY " + q + " DID NOT RETURN CORRECT RESULT!!!")
               System.out.println("Correct result:")
               System.out.println(resc)
               System.out.println("Result obtained from execution:")
@@ -118,11 +114,7 @@ trait LegoRunner {
               System.out.println("-----------------------------------------")
               System.exit(0)
             } else System.out.println("CHECK RESULT FOR QUERY " + q + ": [OK]")
-          } else {
-            System.out.println("Reference result file not found. Skipping checking of result")
-            System.out.println("Execution results:")
-            System.out.println(resq)
-          }
+          } else System.out.println("Reference result file not found. Skipping checking of result")
         }
       }
     }

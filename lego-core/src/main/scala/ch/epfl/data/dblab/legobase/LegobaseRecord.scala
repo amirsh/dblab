@@ -8,7 +8,16 @@ case class LegobaseRecord(values: Seq[(String, Any)]) extends Record {
   def numFields = fieldMap.size
   def getField(name: String): Option[Any] = fieldMap.get(name) match {
     case Some(fld) => Some(fld)
-    case None      => None
+    case None =>
+      var stop = false
+      var res: Option[Any] = None
+      for (f <- getNestedRecords() if !stop) {
+        f.getField(name) match {
+          case Some(r) => res = Some(r); stop = true;
+          case None    =>
+        }
+      }
+      res
   }
   def setField(name: String, value: Any) = fieldMap(name) = value
   def getFieldNames() = fieldMap.keySet
