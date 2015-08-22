@@ -85,7 +85,13 @@ trait LegoRunner {
 
         new SQLSemanticCheckerAndTypeInference(schema).checkAndInfer(normalizedqStmt)
         val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(normalizedqStmt)
-        val optimizerTree = if ((!q.contains("tpcds")) && queryName != "Q19" && queryName != "Q16" && queryName != "Q22") new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR Q19
+        val optimizerTree = {
+          if (q.contains("tpch"))
+            if (queryName != "Q19" && queryName != "Q16" && queryName != "Q22") new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
+          else if (q.contains("tpcds"))
+            if (!(List("Q1", "Q3", "Q10", "Q15", "Q52", "Q79").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
+          else operatorTree
+        }
         //val optimizerTree = operatorTree // TODO -- FIX OPTIMIZER
         if (Config.debugQueryPlan)
           System.out.println(optimizerTree + "\n\n")

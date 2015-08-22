@@ -43,7 +43,7 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
   }
 
   def isPrimitiveExpression(expr: Expression) = expr match {
-    case Equals(_, _) | LessThan(_, _) | LessOrEqual(_, _) | GreaterThan(_, _) | GreaterOrEqual(_, _) | Like(_, _, _) => true
+    case Equals(_, _) | NotEquals(_, _) | LessThan(_, _) | LessOrEqual(_, _) | GreaterThan(_, _) | GreaterOrEqual(_, _) | Like(_, _, _) | In(_, _, _) => true
     case _ => false
   }
 
@@ -53,12 +53,16 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
       case And(lhs, rhs)                       => And(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case Or(lhs, rhs)                        => Or(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case Equals(lhs, rhs)                    => Equals(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
+      case NotEquals(lhs, rhs)                 => NotEquals(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case LessThan(lhs, rhs)                  => LessThan(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case LessOrEqual(lhs, rhs)               => LessOrEqual(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case GreaterThan(lhs, rhs)               => GreaterThan(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case GreaterOrEqual(lhs, rhs)            => GreaterOrEqual(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case Like(lhs, rhs, negate)              => Like(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs), negate)
       case Add(lhs, rhs)                       => Add(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
+      case In(expr, list, negate)              => In(dealiasFieldIdent(expr), list, negate)
+      case Substring(expr, start, end)         => Substring(dealiasFieldIdent(expr), start, end)
+      case UnaryMinus(expr)                    => UnaryMinus(dealiasFieldIdent(expr))
       case Subtract(lhs, rhs)                  => Subtract(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case c: LiteralExpression                => expr
     }
@@ -66,13 +70,17 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
     newExpr
   }
 
-  def processPrimitiveExpression(expr: Expression) = expr match {
+  def processPrimitiveExpression(expr: Expression): FieldIdent = expr match {
     case Equals((fi: FieldIdent), _)         => fi
+    case NotEquals((fi: FieldIdent), _)      => fi
     case LessThan((fi: FieldIdent), _)       => fi
     case LessOrEqual((fi: FieldIdent), _)    => fi
     case GreaterThan((fi: FieldIdent), _)    => fi
     case GreaterOrEqual((fi: FieldIdent), _) => fi
     case Like((fi: FieldIdent), _, _)        => fi
+    case In((fi: FieldIdent), _, _)          => fi
+    case In(expr, _, _)                      => processPrimitiveExpression(expr)
+    case Substring((fi: FieldIdent), _, _)   => fi
   }
 
   def analysePushingUpCondition(parent: OperatorNode, cond: Expression): Option[Expression] = cond match {

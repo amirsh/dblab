@@ -91,7 +91,6 @@ object LegoInterpreter extends LegoRunner {
           if (alias.isDefined) recursiveGetField(n, None, t) // Last chance, search without alias
           else throw new Exception("BUG: Searched for field " + n + " in " + t + " and couldn't find it! (and no other record available to search in)")
         } else {
-
           searchRecord(t2) match {
             case None =>
               alias match {
@@ -203,6 +202,7 @@ object LegoInterpreter extends LegoRunner {
       computeNumericExpression(left, right, (x, y) => x - y, t, t2)(left.tp, right.tp)
     case Multiply(left, right) =>
       computeNumericExpression(left, right, (x, y) => x * y, t, t2)(left.tp, right.tp)
+    case UnaryMinus(expr) => computeNumericExpression(IntLiteral(-1), expr, (x, y) => x * y, t, t2)(expr.tp, expr.tp)
     // Logical Operators
     case Equals(left, right) =>
       parseExpression(left, t, t2)(left.tp) == parseExpression(right, t, t2)(right.tp)
@@ -252,6 +252,12 @@ object LegoInterpreter extends LegoRunner {
           f.endsWith(v)
       }
       if (negate) !res else res
+    case In(expr, values, not) => {
+      val c = parseExpression(expr, t, t2)
+      val res = if (values.contains(c)) true
+      else false
+      if (not) !res else res
+    }
     case Case(cond, thenp, elsep) =>
       val c = parseExpression(cond, t, t2)
       if (c == true) parseExpression(thenp, t, t2) else parseExpression(elsep, t, t2)

@@ -16,7 +16,7 @@ object Config {
   /** Specifies whether to obtain statistics during schema definition */
   val gatherStats: Boolean = false
   /** Specifies whether to show information about the query plan generation of LegoBase during execution */
-  val debugQueryPlan: Boolean = false
+  val debugQueryPlan: Boolean = true
 
   /* Code generation info */
   sealed trait CodeGenerationLang

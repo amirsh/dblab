@@ -27,6 +27,8 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       case (IntType, DoubleType)   => e.setTp(DoubleType)
       case (DoubleType, IntType)   => e.setTp(DoubleType)
       case (DoubleType, FloatType) => e.setTp(DoubleType)
+      // The following may actually happen (see referenced TPCDS queries and expression for more details)
+      case (DoubleType, null)      => e.setTp(DoubleType) // TPCDS Q43, expr SUM(CASE WHEN (d_day_name='Saturday') THEN ss_sales_price ELSE null END) sat_sales
     }
   }
 
@@ -51,7 +53,7 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
             case Some(al) => al._1.tp match {
               case null =>
                 checkAndInferExpr(al._1); fi.setTp(al._1.tp)
-              case _    => fi.setTp(al._1.tp)
+              case _ => fi.setTp(al._1.tp)
             }
             case None =>
             //throw new Exception("Attribute " + name + " referenced in SQL query does not exist in any relation.")
@@ -74,6 +76,9 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       checkAndInferExpr(left)
       checkAndInferExpr(right)
       setResultType(div, left, right)
+    case uminus @ UnaryMinus(expr) =>
+      checkAndInferExpr(expr)
+      uminus.setTp(expr.tp)
     case sum @ Sum(expr) =>
       checkAndInferExpr(expr)
       sum.setTp(typeTag(expr.tp))
@@ -88,6 +93,9 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
     case min @ Min(expr) =>
       checkAndInferExpr(expr)
       min.setTp(expr.tp)
+    case max @ Max(expr) =>
+      checkAndInferExpr(expr)
+      max.setTp(expr.tp)
     // Logical Operators
     case and @ And(left, right) =>
       checkAndInferExpr(left)

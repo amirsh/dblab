@@ -22,7 +22,7 @@ object SQLParser extends StandardTokenParsers {
   def parse(statement: String): SelectStatement = {
     phrase(parseSelectStatement)(new lexical.Scanner(statement)) match {
       case Success(r, q) => r
-      case _             => throw new Exception("Unable to parse SQL query!")
+      case failure       => throw new Exception("Unable to parse SQL query!\n" + failure)
     }
   }
 
