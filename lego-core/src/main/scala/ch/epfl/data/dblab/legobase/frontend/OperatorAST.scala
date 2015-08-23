@@ -9,6 +9,7 @@ object OperatorAST {
   abstract class OperatorNode {
     def toList(): List[OperatorNode] = List(this) ++ (this match {
       case ScanOpNode(_, _, _)                             => List()
+      case UnionAllOpNode(top, bottom)                     => top.toList ++ bottom.toList
       case SelectOpNode(parent, _, _)                      => parent.toList
       case JoinOpNode(leftParent, rightParent, _, _, _, _) => leftParent.toList ++ rightParent.toList
       case AggOpNode(parent, _, _, _)                      => parent.toList
@@ -63,6 +64,10 @@ object OperatorAST {
       if (limit != -1) stringify(limit, "LIMIT: ")
       else ""
     } + stringify(parent)
+  }
+
+  case class UnionAllOpNode(top: OperatorNode, bottom: OperatorNode) extends OperatorNode {
+    override def toString = "UnionAllOp" + stringify(top) + stringify(bottom)
   }
 
   // Dummy node to know where a subquery begins and ends

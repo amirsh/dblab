@@ -36,6 +36,7 @@ case class SelectStatement(withs: Seq[Subquery],
       "\n===================="
   }
 }
+case class UnionAll(top: Node, bottom: Node) extends Node
 
 trait Projections extends Node
 case class ExpressionProjections(lst: Seq[(Expression, Option[String])]) extends Projections
@@ -130,7 +131,7 @@ case class DateLiteral(v: Int) extends LiteralExpression {
 
 trait Relation extends Node
 case class SQLTable(name: String, alias: Option[String]) extends Relation
-case class Subquery(subquery: SelectStatement, alias: String) extends Relation
+case class Subquery(subquery: Node, alias: String) extends Relation
 
 sealed abstract trait JoinType
 case object InnerJoin extends JoinType

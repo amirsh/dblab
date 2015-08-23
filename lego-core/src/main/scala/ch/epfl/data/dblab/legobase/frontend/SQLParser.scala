@@ -19,18 +19,28 @@ import ch.epfl.data.dblab.legobase.queryengine.GenericEngine
  */
 object SQLParser extends StandardTokenParsers {
 
-  def parse(statement: String): SelectStatement = {
-    phrase(parseSelectStatement)(new lexical.Scanner(statement)) match {
+  def parse(statement: String): Node = {
+    phrase(parseQuery)(new lexical.Scanner(statement)) match {
       case Success(r, q) => r
       case failure       => throw new Exception("Unable to parse SQL query!\n" + failure)
     }
   }
 
+  def parseQuery: Parser[Node] = (
+    rep1sep(parseSelectStatement, "UNION" ~ "ALL") ^^ {
+      case stmts => stmts.size match {
+        case 1 => stmts(0)
+        case _ =>
+          val root = stmts(0).asInstanceOf[Node]
+          stmts.tail.foldLeft(root)((node, tree) => UnionAll(node, tree))
+      }
+    })
+
   def parseSelectStatement: Parser[SelectStatement] = (
     parseAllCTEs ~ "SELECT" ~ parseProjections ~ "FROM" ~ parseRelations ~ parseWhere.? ~ parseGroupBy.? ~ parseHaving.? ~ parseOrderBy.? ~ parseLimit.? <~ ";".? ^^ {
       case withs ~ _ ~ pro ~ _ ~ tab ~ whe ~ grp ~ hav ~ ord ~ lim => {
         val rel = extractAllRelationsFromJoinTrees(tab)
-        val aliases = extractAllAliasesFromProjections(pro) ++ withs.map(w => extractAllAliasesFromProjections(w.subquery.projections)).flatten
+        val aliases = extractAllAliasesFromProjections(pro) ++ withs.map(w => extractAllAliasesFromProjections(extractProjectionFromSubquery(w.subquery))).flatten
         SelectStatement(withs, pro, rel, Some(tab), whe, grp, hav, ord, lim, aliases)
       }
     })
@@ -41,7 +51,7 @@ object SQLParser extends StandardTokenParsers {
       case None       => List[Subquery]()
     }
   def parseCTE: Parser[Subquery] =
-    ident ~ "AS" ~ "(" ~ parseSelectStatement <~ ")" ^^
+    ident ~ "AS" ~ "(" ~ parseQuery <~ ")" ^^
       { case name ~ _ ~ _ ~ stmt => Subquery(stmt, name) }
 
   def parseProjections: Parser[Projections] = (
@@ -203,19 +213,38 @@ object SQLParser extends StandardTokenParsers {
       case Join(left, right, _, _) =>
         extractRelationsFromJoinTree(left) ++ extractRelationsFromJoinTree(right)
       case tbl: SQLTable => Seq(tbl)
-      case sq: Subquery => sq.subquery.joinTrees match {
-        case Some(tr) => tr.flatMap(extractRelationsFromJoinTree(_))
-        case None     => sq.subquery.relations
-      }
+      case sq: Subquery  => extractRelationFromSubquery(sq.subquery)
     }
+  }
+
+  def extractRelationFromSubquery(sq: Node) = sq match {
+    case stmt: SelectStatement => stmt.joinTrees match {
+      case Some(tr) => tr.flatMap(extractRelationsFromJoinTree(_))
+      case None     => stmt.relations
+    }
+  }
+
+  def extractProjectionFromSubquery(sq: Node): Projections = sq match {
+    case stmt: SelectStatement => stmt.projections
+    case unionAll: UnionAll    => extractProjectionFromSubquery(unionAll.top)
   }
 
   class SqlLexical extends StdLexical {
     case class FloatLit(chars: String) extends Token {
       override def toString = chars
     }
+    override def processIdent(token: String) = {
+      val tkn = {
+        val str = token.toUpperCase
+        if (tokens.contains(str)) str
+        else token
+      }
+      super.processIdent(tkn)
+    }
     override def token: Parser[Token] =
-      (identChar ~ rep(identChar | digit) ^^ { case first ~ rest => processIdent(first :: rest mkString "") }
+      (identChar ~ rep(identChar | digit) ^^ {
+        case first ~ rest => processIdent(first :: rest mkString "")
+      }
         | rep1(digit) ~ opt('.' ~> rep(digit)) ^^ {
           case i ~ None    => NumericLit(i mkString "")
           case i ~ Some(d) => FloatLit(i.mkString("") + "." + d.mkString(""))
@@ -247,12 +276,14 @@ object SQLParser extends StandardTokenParsers {
   def floatLit: Parser[String] =
     elem("decimal", _.isInstanceOf[lexical.FloatLit]) ^^ (_.chars)
 
-  lexical.reserved += (
-    "SELECT", "AS", "OR", "AND", "GROUP", "ORDER", "BY", "WHERE", "WITH",
+  val tokens = List("SELECT", "AS", "OR", "AND", "GROUP", "ORDER", "BY", "WHERE", "WITH",
     "JOIN", "ASC", "DESC", "FROM", "ON", "NOT", "HAVING",
     "EXISTS", "BETWEEN", "LIKE", "IN", "NULL", "LEFT", "RIGHT",
     "FULL", "OUTER", "SEMI", "INNER", "ANTI", "COUNT", "SUM", "AVG", "MIN", "MAX", "YEAR",
-    "DATE", "TOP", "LIMIT", "CASE", "WHEN", "THEN", "ELSE", "END", "SUBSTRING", "SUBSTR")
+    "DATE", "TOP", "LIMIT", "CASE", "WHEN", "THEN", "ELSE", "END", "SUBSTRING", "SUBSTR", "UNION", "ALL")
+
+  for (token <- tokens)
+    lexical.reserved += token
 
   lexical.delimiters += (
     "*", "+", "-", "<", "=", "<>", "!=", "<=", ">=", ">", "/", "(", ")", ",", ".", ";")

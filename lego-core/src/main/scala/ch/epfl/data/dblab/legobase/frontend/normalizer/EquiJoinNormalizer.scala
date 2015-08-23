@@ -1,6 +1,7 @@
 package ch.epfl.data
 package dblab.legobase
 package frontend
+package normalizer
 
 import schema.Schema
 import scala.collection.mutable.ListBuffer
@@ -12,7 +13,7 @@ import scala.collection.mutable.ListBuffer
  */
 class EquiJoinNormalizer(schema: Schema) extends Normalizer {
 
-  override def normalize(stmt: SelectStatement): SelectStatement = {
+  override def normalizeStmt(stmt: SelectStatement): SelectStatement = {
     val stmtWithNewJoinTree = pushPredicatesToJoins(stmt)
     reorderJoinPredicates(stmtWithNewJoinTree)
   }
@@ -54,9 +55,9 @@ class EquiJoinNormalizer(schema: Schema) extends Normalizer {
   }
 
   private def normalizeJoinTree(rel: Relation): Relation = rel match {
-    case Subquery(sq, al) => Subquery(normalize(sq), al)
-    case Join(l, r, t, c) => Join(normalizeJoinTree(l), normalizeJoinTree(r), t, c)
-    case a                => a
+    case Subquery((stmt: SelectStatement), al) => Subquery(normalizeStmt(stmt), al)
+    case Join(l, r, t, c)                      => Join(normalizeJoinTree(l), normalizeJoinTree(r), t, c)
+    case a                                     => a
   }
 
   /**
@@ -121,7 +122,9 @@ class EquiJoinNormalizer(schema: Schema) extends Normalizer {
       case _ => rel
     }
 
-    SelectStatement(stmt.withs.map(w => Subquery(normalize(w.subquery), w.alias)), stmt.projections, stmt.relations, Some(Seq(reorderPreds(stmt.joinTrees.get(0)))), stmt.where,
+    SelectStatement(stmt.withs.map(w => Subquery(normalizeStmt(w.subquery match {
+      case stmt: SelectStatement => stmt
+    }), w.alias)), stmt.projections, stmt.relations, Some(Seq(reorderPreds(stmt.joinTrees.get(0)))), stmt.where,
       stmt.groupBy, stmt.having, stmt.orderBy, stmt.limit, stmt.aliases)
   }
 
@@ -146,24 +149,26 @@ class EquiJoinNormalizer(schema: Schema) extends Normalizer {
           }
         }
       }
-      case Subquery(stmt, alias) => {
+      case Subquery(node, alias) => {
         quali match {
           case Some(q) => if (q != alias) return false
           case _       =>
         }
-        stmt.projections match {
-          case AllColumns() => containsField(stmt.joinTrees.get(0), field) /* Suppose that only one join tree is left */
-          case ExpressionProjections(lst) => lst.exists {
-            case (subExp, subAli) =>
-              subExp match {
-                /* Check if there exists a field in the projections of the subquery
-                 * (either identified by field name or alias) */
-                case FieldIdent(subQuali, subName, _) => subAli match {
-                  case Some(subA) => fName == subA
-                  case None       => fName == subName
+        node match {
+          case stmt: SelectStatement => stmt.projections match {
+            case AllColumns() => containsField(stmt.joinTrees.get(0), field) /* Suppose that only one join tree is left */
+            case ExpressionProjections(lst) => lst.exists {
+              case (subExp, subAli) =>
+                subExp match {
+                  /* Check if there exists a field in the projections of the subquery
+                  * (either identified by field name or alias) */
+                  case FieldIdent(subQuali, subName, _) => subAli match {
+                    case Some(subA) => fName == subA
+                    case None       => fName == subName
+                  }
+                  case _ => false
                 }
-                case _ => false
-              }
+            }
           }
         }
       }

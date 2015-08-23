@@ -411,5 +411,7 @@ object LegoInterpreter extends LegoRunner {
     case SubqueryNode(parent) => convertOperator(parent)
     case SubquerySingleResultNode(parent) =>
       new SubquerySingleResult(convertOperator(parent))
+    case UnionAllOpNode(top, bottom) =>
+      new UnionAllOperator(convertOperator(top), convertOperator(bottom))
   }
 }

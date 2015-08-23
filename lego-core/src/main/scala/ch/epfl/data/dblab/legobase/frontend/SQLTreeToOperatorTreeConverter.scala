@@ -62,7 +62,7 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
             }
           }
         }
-      case sq: Subquery => SubqueryNode(createMainOperatorTree(sq.subquery))
+      case sq: Subquery => SubqueryNode(convertQuery(sq.subquery).topOperator)
     }
   }
 
@@ -200,7 +200,7 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
 
   def createMainOperatorTree(sqlTree: SelectStatement): OperatorNode = {
     sqlTree.withs.foreach(w => {
-      temporaryViewMap += w.alias -> createMainOperatorTree(w.subquery)
+      temporaryViewMap += w.alias -> convertQuery(w.subquery).topOperator
     })
 
     val inputOps = createScanOperators(sqlTree)
@@ -216,10 +216,23 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
     havingOp
   }
 
-  def convert(sqlTree: SelectStatement) = {
-    val topOperator = createMainOperatorTree(sqlTree)
-    val printOp = createPrintOperator(topOperator, sqlTree.projections, sqlTree.limit)
-    //System.out.println(printOp + "\n\n")
+  case class QueryTree(topOperator: OperatorNode, projections: Projections, limit: Option[Limit])
+
+  def convertQuery(node: Node): QueryTree = node match {
+    case UnionAll(top, bottom) =>
+      val topQueryTree = convertQuery(top)
+      val bottomQueryTree = convertQuery(bottom)
+      val unionTree = UnionAllOpNode(topQueryTree.topOperator, bottomQueryTree.topOperator)
+      // TODO: Check here that both parts of union all return the same schema. If not throw an exception
+      // TODO: Handle limit properly... this assumes that both parts of union all have the same limit (not necessary)
+      QueryTree(unionTree, topQueryTree.projections, topQueryTree.limit)
+    case stmt: SelectStatement =>
+      QueryTree(createMainOperatorTree(stmt), stmt.projections, stmt.limit)
+  }
+
+  def convert(node: Node): OperatorNode = {
+    val queryTree = convertQuery(node)
+    val printOp = createPrintOperator(queryTree.topOperator, queryTree.projections, queryTree.limit)
     printOp
   }
 }

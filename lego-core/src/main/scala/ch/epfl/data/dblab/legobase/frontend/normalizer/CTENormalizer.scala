@@ -1,6 +1,7 @@
 package ch.epfl.data
 package dblab.legobase
 package frontend
+package normalizer
 
 /**
  * Takes all common table expressions (CTEs) in the statement
@@ -8,7 +9,7 @@ package frontend
  * CTEs or the table list of the main query itself.
  */
 object CTENormalizer extends Normalizer {
-  override def normalize(stmt: SelectStatement): SelectStatement = {
+  override def normalizeStmt(stmt: SelectStatement) = {
     val appliedCTEs = stmt.withs.foldLeft(Seq[Subquery]())((agg, curr) => agg :+ inlineCTEsInCTE(agg, curr))
     inlineCTE(appliedCTEs, stmt)
   }
@@ -22,7 +23,9 @@ object CTENormalizer extends Normalizer {
     if (existingCTEs.map(_.alias) contains currentCTE.alias)
       throw new Exception(s"LegoBase Frontend BUG: WITH expression '${currentCTE.alias}' occured multiple times. Please use a different name.")
 
-    Subquery(inlineCTE(existingCTEs, currentCTE.subquery), currentCTE.alias)
+    Subquery(inlineCTE(existingCTEs, currentCTE.subquery match {
+      case stmt: SelectStatement => stmt
+    }), currentCTE.alias)
   }
 
   /** Inline CTEs into a select statement */
@@ -40,7 +43,9 @@ object CTENormalizer extends Normalizer {
    * table qualifiers matching a CTE with the CTE itself.
    */
   private def replaceCTEsInJoinTree(existingCTEs: Seq[Subquery], jt: Relation): Relation = jt match {
-    case Subquery(sq, al) => Subquery(inlineCTE(existingCTEs, sq), al)
+    case Subquery(sq, al) => sq match {
+      case stmt: SelectStatement => Subquery(inlineCTE(existingCTEs, stmt), al)
+    }
     case Join(l, r, t, c) => Join(replaceCTEsInJoinTree(existingCTEs, l), replaceCTEsInJoinTree(existingCTEs, r), t, c)
     case tbl @ SQLTable(tblName, tblAlias) =>
       existingCTEs.find(cte => cte.alias == tblName) match {

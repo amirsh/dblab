@@ -172,6 +172,7 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
     case OrderByNode(parent, ob)               => OrderByNode(optimizeNode(parent), ob)
     case PrintOpNode(parent, projNames, limit) => PrintOpNode(optimizeNode(parent), projNames, limit)
     case SubqueryNode(parent)                  => SubqueryNode(optimizeNode(parent))
+    case UnionAllOpNode(top, bottom)           => UnionAllOpNode(optimizeNode(top), optimizeNode(bottom))
   }
 
   def optimize(tree: OperatorNode): OperatorNode = {

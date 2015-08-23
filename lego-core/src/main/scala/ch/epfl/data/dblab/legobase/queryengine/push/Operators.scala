@@ -543,3 +543,25 @@ class LeftOuterJoinOp[A <: Record, B <: Record, C](val leftParent: Operator[A], 
   }
 }
 
+/**
+ * Union all Opeartor
+ *
+ * @param leftParent the left parent operator of this operator
+ * @param rightParent the right parent operator of this operator
+ */
+class UnionAllOperator(val leftParent: Operator[Any], val rightParent: Operator[Any]) extends Operator[Record] {
+  def open() = {
+    leftParent.child = this
+    leftParent.open
+    rightParent.child = this
+    rightParent.open
+  }
+  def next() {
+    rightParent.next
+    leftParent.next
+  }
+  def consume(tuple: Record) {
+    child.consume(tuple)
+  }
+  def reset() {}
+}

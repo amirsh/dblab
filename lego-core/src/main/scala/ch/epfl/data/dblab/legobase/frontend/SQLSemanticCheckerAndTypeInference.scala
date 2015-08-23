@@ -129,6 +129,9 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       checkAndInferExpr(left)
       checkAndInferExpr(right)
       goe.setTp(typeTag[Boolean])
+    case not @ Not(expr) =>
+      checkAndInferExpr(expr)
+      not.setTp(expr.tp)
     // SQL Statements
     case yr @ Year(date) =>
       checkAndInferExpr(date)
@@ -162,6 +165,15 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
     case Join(leftParent, Subquery(subquery, _), _, _) => checkAndInfer(subquery)
     case Subquery(parent, _) => checkAndInfer(parent)
     case _ =>
+  }
+
+  def checkAndInfer(node: Node) {
+    node match {
+      case UnionAll(top, bottom) =>
+        checkAndInfer(top)
+        checkAndInfer(bottom)
+      case stmt: SelectStatement => checkAndInfer(stmt)
+    }
   }
 
   def checkAndInfer(sqlTree: SelectStatement) {

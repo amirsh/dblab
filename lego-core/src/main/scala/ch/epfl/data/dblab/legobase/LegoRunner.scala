@@ -1,10 +1,10 @@
 package ch.epfl.data
 package dblab.legobase
 
-//import tpch._
 import schema._
 import frontend._
 import frontend.optimizer._
+import frontend.normalizer._
 import utils.Utilities._
 import java.io.PrintStream
 import ch.epfl.data.dblab.legobase.frontend.OperatorAST._
@@ -87,9 +87,9 @@ trait LegoRunner {
         val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(normalizedqStmt)
         val optimizerTree = {
           if (q.contains("tpch"))
-            if (queryName != "Q19" && queryName != "Q16" && queryName != "Q22") new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
+            if (!(List("Q16", "Q19", "Q22").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
           else if (q.contains("tpcds"))
-            if (!(List("Q1", "Q3", "Q10", "Q15", "Q52", "Q79").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
+            if (!(List("Q1", "Q3", "Q10", "Q15", "Q19", "Q42", "Q52", "Q58", "Q65", "Q69", "Q79", "Q85", "Q91").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
           else operatorTree
         }
         //val optimizerTree = operatorTree // TODO -- FIX OPTIMIZER
