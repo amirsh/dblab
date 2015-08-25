@@ -89,7 +89,7 @@ trait LegoRunner {
           if (q.contains("tpch"))
             if (!(List("Q16", "Q19", "Q22").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
           else if (q.contains("tpcds"))
-            if (!(List("Q1", "Q3", "Q10", "Q15", "Q19", "Q42", "Q52", "Q58", "Q65", "Q69", "Q79", "Q85", "Q91").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
+            if (!(List("Q1", "Q3", "Q10", "Q15", "Q19", "Q42", "Q52", "Q58", "Q65", "Q69", "Q79", "Q85", "Q91", "Q96").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
           else operatorTree
         }
         //val optimizerTree = operatorTree // TODO -- FIX OPTIMIZER

@@ -15,7 +15,7 @@ import ch.epfl.data.dblab.legobase.queryengine.GenericEngine
 
 /**
  * A simple SQL parser.
- * Based on: https://github.com/stephentu/scala-sql-parser
+ * Based on: https://github.com/stephentu/scala-sql-parser but heavily modified for our needs
  */
 object SQLParser extends StandardTokenParsers {
 
@@ -59,8 +59,13 @@ object SQLParser extends StandardTokenParsers {
     | rep1sep(parseAliasedExpression, ",") ^^ { case lst => ExpressionProjections(lst) })
 
   def parseAliasedExpression: Parser[(Expression, Option[String])] = (
-    parseExpression ~ ("AS".? ~> ident).? ^^ { case expr ~ alias => (expr, alias) })
+    parseExpression ~ parseAlias.? ^^ { case expr ~ alias => (expr, alias) })
 
+  def parseAlias: Parser[String] =
+    ("AS".? ~> ident) ^^ { case ident => ident } |
+      ("AS".? ~> stringLit) ^^ { case lit => lit }
+
+  /* Expression parsing */
   def parseExpression: Parser[Expression] = parseCase | parseOr
 
   def parseCase: Parser[Expression] = "CASE" ~ "WHEN" ~ parseExpression ~ "THEN" ~ parseExpression ~ "ELSE" ~ parseExpression <~ "END" ^^ {
@@ -99,9 +104,9 @@ object SQLParser extends StandardTokenParsers {
             case (acc, ((">", right: Expression)))                  => GreaterThan(acc, right)
             case (acc, ((">=", right: Expression)))                 => GreaterOrEqual(acc, right)
             case (acc, (("BETWEEN", l: Expression, r: Expression))) => And(GreaterOrEqual(acc, l), LessOrEqual(acc, r))
-            case (acc, (("IN", e: Seq[_], n: Boolean)))             => In(acc, e.asInstanceOf[Seq[Expression]], n)
-            case (acc, (("IN", s: SelectStatement, n: Boolean)))    => In(acc, Seq(s), n)
-            case (acc, (("LIKE", e: Expression, n: Boolean)))       => Like(acc, e, n)
+            case (acc, (("IN", e: Seq[_], n: Boolean)))             => if (n) Not(In(acc, e.asInstanceOf[Seq[Expression]])) else In(acc, e.asInstanceOf[Seq[Expression]])
+            case (acc, (("IN", s: SelectStatement, n: Boolean)))    => if (n) Not(In(acc, Seq(s))) else In(acc, Seq(s))
+            case (acc, (("LIKE", e: Expression, n: Boolean)))       => if (n) Not(Like(acc, e)) else Like(acc, e)
           }
       } |
       "NOT" ~> parseSimpleExpression ^^ (Not(_)) |
@@ -150,6 +155,7 @@ object SQLParser extends StandardTokenParsers {
     }
     | "NULL" ^^ { case _ => NullLiteral() }
     | "DATE" ~> stringLit ^^ { case s => DateLiteral(GenericEngine.parseDate(s)) })
+  // ----------------------------------------------------------------------------------------------------------------------------------------------
 
   def parseRelations: Parser[Seq[Relation]] = rep1sep(parseRelation, ",")
 
@@ -161,10 +167,10 @@ object SQLParser extends StandardTokenParsers {
     })
 
   def parseSimpleRelation: Parser[Relation] = (
-    ident ~ ("AS".? ~> ident.?) ^^ {
+    ident ~ parseAlias.? ^^ {
       case tbl ~ alias => SQLTable(tbl, alias)
     }
-    | ("(" ~> parseSelectStatement <~ ")") ~ ("AS".? ~> ident) ^^ {
+    | ("(" ~> parseQuery <~ ")") ~ parseAlias ^^ {
       case subq ~ alias => Subquery(subq, alias)
     })
 
@@ -229,6 +235,7 @@ object SQLParser extends StandardTokenParsers {
     case unionAll: UnionAll    => extractProjectionFromSubquery(unionAll.top)
   }
 
+  // Lexical analytsis methods and variables
   class SqlLexical extends StdLexical {
     case class FloatLit(chars: String) extends Token {
       override def toString = chars

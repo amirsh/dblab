@@ -136,7 +136,7 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
     case yr @ Year(date) =>
       checkAndInferExpr(date)
       yr.setTp(typeTag[Int])
-    case lk @ Like(field, values, _) =>
+    case lk @ Like(field, values) =>
       checkAndInferExpr(field)
       checkAndInferExpr(values)
       lk.setTp(field.tp)
@@ -148,7 +148,7 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       checkAndInferExpr(thenp)
       checkAndInferExpr(elsep)
       setResultType(cs, thenp, elsep)
-    case in @ In(fld, listExpr, _) =>
+    case in @ In(fld, listExpr) =>
       checkAndInferExpr(fld)
       listExpr.foreach(e => checkAndInferExpr(e))
       in.setTp(typeTag[Boolean])

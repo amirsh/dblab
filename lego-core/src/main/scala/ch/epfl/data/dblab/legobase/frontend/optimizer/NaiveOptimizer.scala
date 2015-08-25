@@ -43,7 +43,7 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
   }
 
   def isPrimitiveExpression(expr: Expression) = expr match {
-    case Equals(_, _) | NotEquals(_, _) | LessThan(_, _) | LessOrEqual(_, _) | GreaterThan(_, _) | GreaterOrEqual(_, _) | Like(_, _, _) | In(_, _, _) => true
+    case Equals(_, _) | NotEquals(_, _) | LessThan(_, _) | LessOrEqual(_, _) | GreaterThan(_, _) | GreaterOrEqual(_, _) | Like(_, _) | In(_, _) => true
     case _ => false
   }
 
@@ -58,9 +58,9 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
       case LessOrEqual(lhs, rhs)               => LessOrEqual(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case GreaterThan(lhs, rhs)               => GreaterThan(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case GreaterOrEqual(lhs, rhs)            => GreaterOrEqual(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case Like(lhs, rhs, negate)              => Like(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs), negate)
+      case Like(lhs, rhs)                      => Like(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
       case Add(lhs, rhs)                       => Add(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case In(expr, list, negate)              => In(dealiasFieldIdent(expr), list, negate)
+      case In(expr, list)                      => In(dealiasFieldIdent(expr), list)
       case Substring(expr, start, end)         => Substring(dealiasFieldIdent(expr), start, end)
       case UnaryMinus(expr)                    => UnaryMinus(dealiasFieldIdent(expr))
       case Subtract(lhs, rhs)                  => Subtract(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
@@ -77,9 +77,9 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
     case LessOrEqual((fi: FieldIdent), _)    => fi
     case GreaterThan((fi: FieldIdent), _)    => fi
     case GreaterOrEqual((fi: FieldIdent), _) => fi
-    case Like((fi: FieldIdent), _, _)        => fi
-    case In((fi: FieldIdent), _, _)          => fi
-    case In(expr, _, _)                      => processPrimitiveExpression(expr)
+    case Like((fi: FieldIdent), _)           => fi
+    case In((fi: FieldIdent), _)             => fi
+    case In(expr, _)                         => processPrimitiveExpression(expr)
     case Substring((fi: FieldIdent), _, _)   => fi
   }
 

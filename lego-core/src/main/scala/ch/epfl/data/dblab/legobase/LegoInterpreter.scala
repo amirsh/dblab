@@ -229,13 +229,13 @@ object LegoInterpreter extends LegoRunner {
       val index1 = parseExpression(idx1, t, t2).asInstanceOf[Int] - 1
       val index2 = parseExpression(idx2, t, t2).asInstanceOf[Int]
       f.slice(index1, index2)
-    case Like(field, value, negate) =>
+    case Like(field, value) =>
       val f = parseExpression(field, t, t2).asInstanceOf[OptimalString]
       val s = parseExpression(value, t, t2).asInstanceOf[OptimalString]
       val str = s.string
       val delim = "%%"
       // TODO: In what follows, the replaceAll call must go to the compiler
-      val res = str match {
+      str match {
         case c if str.startsWith(delim) && str.endsWith(delim) && delim.r.findAllMatchIn(str).length == 2 =>
           val v = OptimalString(str.replaceAll("%", "").getBytes)
           f.containsSlice(v)
@@ -251,12 +251,10 @@ object LegoInterpreter extends LegoRunner {
           val v = OptimalString(str.replaceAll("%", "").getBytes)
           f.endsWith(v)
       }
-      if (negate) !res else res
-    case In(expr, values, not) => {
+    case In(expr, values) => {
       val c = parseExpression(expr, t, t2)
-      val res = if (values.contains(c)) true
+      if (values.contains(c)) true
       else false
-      if (not) !res else res
     }
     case Case(cond, thenp, elsep) =>
       val c = parseExpression(cond, t, t2)

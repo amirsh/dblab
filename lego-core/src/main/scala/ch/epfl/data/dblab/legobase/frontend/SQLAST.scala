@@ -68,9 +68,9 @@ case class LessOrEqual(left: Expression, right: Expression) extends InEqualityOp
 case class LessThan(left: Expression, right: Expression) extends InEqualityOperator
 case class GreaterOrEqual(left: Expression, right: Expression) extends InEqualityOperator
 case class GreaterThan(left: Expression, right: Expression) extends InEqualityOperator
-case class In(elem: Expression, set: Seq[Expression], negate: Boolean) extends Expression
+case class In(elem: Expression, set: Seq[Expression]) extends Expression
 
-case class Like(left: Expression, right: Expression, negate: Boolean) extends BinaryOperator
+case class Like(left: Expression, right: Expression) extends BinaryOperator
 case class Add(left: Expression, right: Expression) extends BinaryOperator
 case class Subtract(left: Expression, right: Expression) extends BinaryOperator
 case class Multiply(left: Expression, right: Expression) extends BinaryOperator
