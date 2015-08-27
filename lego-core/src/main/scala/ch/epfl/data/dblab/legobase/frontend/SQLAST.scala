@@ -75,6 +75,9 @@ case class Add(left: Expression, right: Expression) extends BinaryOperator
 case class Subtract(left: Expression, right: Expression) extends BinaryOperator
 case class Multiply(left: Expression, right: Expression) extends BinaryOperator
 case class Divide(left: Expression, right: Expression) extends BinaryOperator
+case class StringConcat(left: Expression, right: Expression) extends BinaryOperator {
+  override val isAggregateOpExpr = false
+}
 
 trait UnaryOperation extends Expression {
   val expr: Expression
@@ -101,6 +104,7 @@ case class Sum(expr: Expression) extends Aggregation
 case class Avg(expr: Expression) extends Aggregation
 case class Min(expr: Expression) extends Aggregation
 case class Max(expr: Expression) extends Aggregation
+case class Distinct(e: Expression) extends Expression
 case class Year(expr: Expression) extends Expression {
   override val isAggregateOpExpr = false
 }
@@ -118,14 +122,14 @@ case class DoubleLiteral(v: Double) extends LiteralExpression {
 case class FloatLiteral(v: Float) extends LiteralExpression {
   override def toString = v.toString
 }
-case class StringLiteral(v: LBString) extends LiteralExpression {
+case class StringLiteral(v: String) extends LiteralExpression {
   override def toString = "'" + v.toString + "'"
 }
 case class CharLiteral(v: Char) extends LiteralExpression {
   override def toString = v.toString
 }
 case class NullLiteral() extends LiteralExpression
-case class DateLiteral(v: Int) extends LiteralExpression {
+case class DateLiteral(v: String) extends LiteralExpression {
   override def toString = "DATE '" + v.toString + "'"
 }
 
@@ -151,3 +155,4 @@ case class GroupBy(keys: Seq[Expression]) extends Node
 case class Having(having: Expression) extends Node
 case class OrderBy(keys: Seq[(Expression, OrderType)]) extends Node
 case class Limit(rows: Long) extends Node
+

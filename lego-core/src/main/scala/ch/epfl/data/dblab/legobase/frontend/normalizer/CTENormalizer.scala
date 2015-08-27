@@ -19,13 +19,15 @@ object CTENormalizer extends Normalizer {
    * This method cannot be used for the main query itself.
    */
   private def inlineCTEsInCTE(existingCTEs: Seq[Subquery], currentCTE: Subquery): Subquery = {
+    def processNode(node: Node): Node = node match {
+      case stmt: SelectStatement => inlineCTE(existingCTEs, stmt)
+      case UnionAll(top, bottom) => UnionAll(processNode(top), processNode(bottom))
+    }
 
     if (existingCTEs.map(_.alias) contains currentCTE.alias)
       throw new Exception(s"LegoBase Frontend BUG: WITH expression '${currentCTE.alias}' occured multiple times. Please use a different name.")
 
-    Subquery(inlineCTE(existingCTEs, currentCTE.subquery match {
-      case stmt: SelectStatement => stmt
-    }), currentCTE.alias)
+    Subquery(processNode(currentCTE.subquery), currentCTE.alias) 
   }
 
   /** Inline CTEs into a select statement */

@@ -59,8 +59,11 @@ object OperatorAST {
     }
   }
 
-  case class PrintOpNode(parent: OperatorNode, projNames: Seq[String], limit: Int) extends OperatorNode {
-    override def toString = "PrintOpNode" + stringify(projNames.mkString(","), "PROJ: ") + {
+  case class PrintOpNode(parent: OperatorNode, projNames: Seq[(Expression, Option[String])], limit: Int) extends OperatorNode {
+    override def toString = "PrintOpNode" + stringify(projNames.map(p => p._2 match {
+      case Some(al) => al
+      case None     => p._1
+    }).mkString(","), "PROJ: ") + {
       if (limit != -1) stringify(limit, "LIMIT: ")
       else ""
     } + stringify(parent)

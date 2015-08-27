@@ -126,6 +126,7 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
       linkingOperatorIsAnd = true
       res
     case c if isPrimitiveExpression(c) => Some(c)
+    case _                             => Some(cond) // ??
   }
 
   def pushUpCondition(tree: OperatorNode): OperatorNode = tree match {

@@ -29,6 +29,7 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       case (DoubleType, FloatType) => e.setTp(DoubleType)
       // The following may actually happen (see referenced TPCDS queries and expression for more details)
       case (DoubleType, null)      => e.setTp(DoubleType) // TPCDS Q43, expr SUM(CASE WHEN (d_day_name='Saturday') THEN ss_sales_price ELSE null END) sat_sales
+      case (null, IntType)         => e.setTp(IntType) // TPCDS Q59
     }
   }
 
@@ -44,6 +45,8 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       sl.setTp(typeTag[LBString])
     case cl @ CharLiteral(_) =>
       cl.setTp(typeTag[Char])
+    case nl @ NullLiteral() =>
+      nl.setTp(null) // ??? is this correct
     case fi @ FieldIdent(_, name, _) =>
       schema.findAttribute(name) match {
         case Some(a) =>
@@ -129,6 +132,10 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       checkAndInferExpr(left)
       checkAndInferExpr(right)
       goe.setTp(typeTag[Boolean])
+    case strcon @ StringConcat(left, right) =>
+      checkAndInferExpr(left)
+      checkAndInferExpr(right)
+      strcon.setTp(left.tp)
     case not @ Not(expr) =>
       checkAndInferExpr(expr)
       not.setTp(expr.tp)
@@ -157,6 +164,9 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       checkAndInferExpr(idx1)
       checkAndInferExpr(idx2)
       substr.setTp(fld.tp)
+    case distinct @ Distinct(e) =>
+      checkAndInferExpr(e)
+      distinct.setTp(e.tp)
     case e: SelectStatement => // Nested subquery
       checkAndInfer(e)
   }

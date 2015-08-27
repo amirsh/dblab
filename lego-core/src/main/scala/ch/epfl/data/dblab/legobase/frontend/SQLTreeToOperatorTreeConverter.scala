@@ -141,24 +141,24 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
   }
 
   // TODO -- needs to be generalized and expanded with more cases
+  def createSubquery(sq: SelectStatement) = {
+    val rootOp = SubquerySingleResultNode(createMainOperatorTree(sq))
+    val rhs = GetSingleResult(rootOp)
+    rhs.setTp(typeTag[Double]) // FIXME
+    rhs
+  }
   def analyzeExprForSubquery(expr: Expression, parentOp: OperatorNode, isHaving: Boolean): SelectOpNode = expr match {
     case GreaterThan(e, (sq: SelectStatement)) =>
-      val rootOp = SubquerySingleResultNode(createMainOperatorTree(sq))
-      val rhs = GetSingleResult(rootOp)
-      rhs.setTp(typeTag[Double]) // FIXME
-      SelectOpNode(parentOp, GreaterThan(e, rhs), isHaving)
-    //case GreaterThan(e1, e2) => SelectOpNode(parentOp, GreaterThan(e1, e2), true)
+      SelectOpNode(parentOp, GreaterThan(e, createSubquery(sq)), isHaving)
     case LessThan(e, (sq: SelectStatement)) =>
-      val rootOp = SubquerySingleResultNode(createMainOperatorTree(sq))
-      val rhs = GetSingleResult(rootOp)
-      rhs.setTp(typeTag[Double]) // FIXME
-      SelectOpNode(parentOp, LessThan(e, rhs), isHaving)
-    case And(e1, e2) => {
+      SelectOpNode(parentOp, LessThan(e, createSubquery(sq)), isHaving)
+    case Equals(e, (sq: SelectStatement)) =>
+      SelectOpNode(parentOp, LessThan(e, createSubquery(sq)), isHaving)
+    case And(e1, e2) =>
       // TODO -- Not the best of solutions, but OK for now (this func needs to break into two, one for analysis, one for construction of nodes)
       val left = analyzeExprForSubquery(e1, parentOp, isHaving)
       val right = analyzeExprForSubquery(e2, parentOp, isHaving)
       SelectOpNode(parentOp, And(left.cond, right.cond), isHaving)
-    }
     case dflt @ _ =>
       //System.out.println("Do not know how to handle " + dflt + "... Treating it as default..."); 
       SelectOpNode(parentOp, expr, isHaving)
@@ -178,21 +178,11 @@ class SQLTreeToOperatorTreeConverter(schema: Schema) {
   }
 
   def createPrintOperator(parent: OperatorNode, e: Projections, limit: Option[Limit]) = {
-    val projNames = e match {
-      case ExpressionProjections(proj) => proj.map(p => p._2 match {
-        case Some(al) => al
-        case None => p._1 match {
-          case FieldIdent(qualifier, name, _) => qualifier.getOrElse("") + name
-          case _ => {
-            if (!p._2.isDefined && p._1.isInstanceOf[Aggregation])
-              throw new Exception("LegoBase limitation: Aggregates must always be aliased (e.g. SUM(...) AS TOTAL)")
-            p._1.toString // TODO -- Not entirely correct if this is an aggregation without alias
-          }
-        }
-      })
-      case AllColumns() => Seq()
+    val projs = e match {
+      case ExpressionProjections(proj) => proj
+      case AllColumns()                => Seq()
     }
-    new PrintOpNode(parent, projNames, limit match {
+    new PrintOpNode(parent, projs, limit match {
       case Some(Limit(num)) => num.toInt
       case None             => -1
     })

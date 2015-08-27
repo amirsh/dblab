@@ -89,7 +89,7 @@ object LegoInterpreter extends LegoRunner {
       case None =>
         if (t2 == null) {
           if (alias.isDefined) recursiveGetField(n, None, t) // Last chance, search without alias
-          else throw new Exception("BUG: Searched for field " + n + " in " + t + " and couldn't find it! (and no other record available to search in)")
+          else throw new Exception("BUG: Searched for field " + n + " in " + t + " and couldn't find it! (and no other record available to search in -- case 1/Alias:" + alias + ")")
         } else {
           searchRecord(t2) match {
             case None =>
@@ -97,7 +97,7 @@ object LegoInterpreter extends LegoRunner {
                 case Some(al) =>
                   recursiveGetField(n, None, t, t2) // Last chance, search with alias
                 case None =>
-                  throw new Exception("BUG: Searched for field " + n + " in " + t + " and couldn't find it! (and no other record available to search in)")
+                  throw new Exception("BUG: Searched for field " + n + " in " + t + " and couldn't find it! (and no other record available to search in -- case 2/Alias:" + alias + ")")
               }
             case Some(res) => res //rec.getField(name).get
           }
@@ -105,7 +105,7 @@ object LegoInterpreter extends LegoRunner {
     }
   }
 
-  def printRecord(rec: Record, order: Seq[String] = Seq()) {
+  def printRecord(rec: Record, order: Seq[Expression] = Seq()) {
     //System.out.println("Printing record...")
     def printMembers(v: Any, cls: Class[_]) {
       v match {
@@ -131,9 +131,13 @@ object LegoInterpreter extends LegoRunner {
           printMembers(f, f.getClass)
         })
       case _ =>
-        order.foreach(n => {
-          val f = recursiveGetField(n, None, rec)
-          printMembers(f, f.getClass)
+        order.foreach(p => p match {
+          case FieldIdent(qualifier, name, _) =>
+            val f = recursiveGetField(qualifier.getOrElse("") + name, None, rec)
+            printMembers(f, f.getClass)
+          case e =>
+            val parsedExpr = parseExpression(e, rec)(e.tp)
+            printMembers(parsedExpr, parsedExpr.getClass)
         })
     }
   }
@@ -155,7 +159,8 @@ object LegoInterpreter extends LegoRunner {
       //case (FloatType, DoubleType) => n1.asInstanceOf[Float].toDouble -> n2
       //case (DoubleType, FloatType) => n1 -> n2.asInstanceOf[Float].toDouble
       case (DoubleType, IntType) => n1 -> n2.asInstanceOf[Int].toDouble
-      case _                     => n1.asInstanceOf[Double].toDouble -> n2.asInstanceOf[Double].toDouble // FIXME FIXME FIXME THIS SHOULD BE HAPPENING, TYPE INFERENCE BUG
+      case _ =>
+        n1.asInstanceOf[Double].toDouble -> n2.asInstanceOf[Double].toDouble // FIXME FIXME FIXME THIS SHOULD BE HAPPENING, TYPE INFERENCE BUG
       //case (x, y)                  => throw new Exception(s"Does not know how to find the common type for $x and $y")
     }).asInstanceOf[(Any, Any)]
   }
@@ -189,11 +194,12 @@ object LegoInterpreter extends LegoRunner {
   def parseExpression[A: TypeTag](e: Expression, t: Record, t2: Record = null): A = (e match {
     // Literals
     case FieldIdent(qualifier, name, _) => recursiveGetField(name, qualifier, t, t2)
-    case DateLiteral(v)                 => v
+    case DateLiteral(v)                 => GenericEngine.parseDate(v)
     case FloatLiteral(v)                => v
     case DoubleLiteral(v)               => v
     case IntLiteral(v)                  => v
-    case StringLiteral(v)               => v
+    case StringLiteral(v)               => GenericEngine.parseString(v)
+    case NullLiteral()                  => null
     case CharLiteral(v)                 => v
     // Arithmetic Operators
     case Add(left, right) =>
@@ -202,6 +208,9 @@ object LegoInterpreter extends LegoRunner {
       computeNumericExpression(left, right, (x, y) => x - y, t, t2)(left.tp, right.tp)
     case Multiply(left, right) =>
       computeNumericExpression(left, right, (x, y) => x * y, t, t2)(left.tp, right.tp)
+    case Divide(left, right) =>
+      // TODO: Check if this gives the correct result -- also fix asInstanceOf
+      computeNumericExpression(left, right, (x, y) => x.toInt / (y.asInstanceOf[Int]), t, t2)(left.tp, right.tp)
     case UnaryMinus(expr) => computeNumericExpression(IntLiteral(-1), expr, (x, y) => x * y, t, t2)(expr.tp, expr.tp)
     // Logical Operators
     case Equals(left, right) =>
@@ -220,6 +229,9 @@ object LegoInterpreter extends LegoRunner {
       computeOrderingExpression(left, right, (x, y) => x <= y, t, t2)(left.tp, right.tp)
     case LessThan(left, right) =>
       computeOrderingExpression(left, right, (x, y) => x < y, t, t2)(left.tp, right.tp)
+    case Not(expr) =>
+      val c = parseExpression[Boolean](expr, t, t2)
+      !c
     // SQL statements
     case Year(date) =>
       val d = parseExpression(date, t, t2)
@@ -256,6 +268,11 @@ object LegoInterpreter extends LegoRunner {
       if (values.contains(c)) true
       else false
     }
+    case StringConcat(str1, str2) =>
+      // Todo move this to SC
+      val left = parseExpression(str1, t, t2)
+      val right = parseExpression[OptimalString](str2, t, t2)
+      left + new String(right.data.map(_.toChar))
     case Case(cond, thenp, elsep) =>
       val c = parseExpression(cond, t, t2)
       if (c == true) parseExpression(thenp, t, t2) else parseExpression(elsep, t, t2)
@@ -330,7 +347,7 @@ object LegoInterpreter extends LegoRunner {
 
     val grp: (Record) => Any = (t: Record) => {
       gb.size match {
-        case 0 => Seq(StringLiteral(GenericEngine.parseString("NO_GROUP_BY"))) zip Seq("NO_GROUP_BY")
+        case 0 => Seq(StringLiteral("NO_GROUP_BY")) zip Seq("NO_GROUP_BY")
         case 1 => parseExpression(gb(0)._1, t)
         case _ =>
           val keyFieldAttrNames = gb.map(_._2)
@@ -382,11 +399,22 @@ object LegoInterpreter extends LegoRunner {
     })
   }
 
-  def createPrintOperator(parent: OperatorNode, projNames: Seq[String], limit: Int) = {
+  def createPrintOperator(parent: OperatorNode, projs: Seq[(Expression, Option[String])], limit: Int) = {
+    val finalProjs = projs.map(p => p._1 match {
+      case c if (!p._2.isDefined && p._1.isInstanceOf[Aggregation]) =>
+        throw new Exception("LegoBase limitation: Aggregates must always be aliased (e.g. SUM(...) AS TOTAL)")
+      case _ => p._1 match {
+        case agg if p._1.isAggregateOpExpr => FieldIdent(None, p._2.get)
+        // TODO -- The following line shouldn't be necessary in a clean solution
+        case Year(_) | Substring(_, _, _)  => FieldIdent(None, p._2.get)
+        case _                             => p._1
+      }
+    })
+
     new PrintOp(convertOperator(parent))(kv => {
-      projNames.size match {
+      finalProjs.size match {
         case 0 => printRecord(kv.asInstanceOf[Record])
-        case _ => printRecord(kv.asInstanceOf[Record], projNames)
+        case _ => printRecord(kv.asInstanceOf[Record], finalProjs)
       }
     }, limit)
   }
