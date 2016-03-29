@@ -9,5 +9,5 @@ import OperatorAST._
  * Observe that since the main optimize function takes as input and returns 
  * an operator tree, this allows optimizers to be chained together. */
 trait Optimizer {
-  def optimize(tree: OperatorNode): OperatorNode
+  def optimize(tree: QueryPlanTree): QueryPlanTree
 }

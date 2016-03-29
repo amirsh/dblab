@@ -1,7 +1,7 @@
 
 SELECT  dt.d_year 
-       ,item.i_brand_id brand_id 
-       ,item.i_brand brand
+       ,item.i_brand_id
+       ,item.i_brand
        ,SUM(ss_ext_sales_price) sum_agg
  FROM  date_dim dt 
       ,store_sales
@@ -15,7 +15,7 @@ SELECT  dt.d_year
       ,item.i_brand_id
  ORDER BY dt.d_year
          ,sum_agg DESC
-         ,brand_id
+         ,item.i_brand_id
  LIMIT 100;
 
 

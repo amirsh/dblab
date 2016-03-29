@@ -9,6 +9,7 @@ import ru._
 
 class SQLSemanticCheckerAndTypeInference(schema: Schema) {
   var aliasesList: Seq[(Expression, String, Int)] = Seq()
+  var views: Seq[View] = Seq()
 
   // TODO: Maybe this should be removed if there is a better solution for it
   def typeToTypeTag(tp: Tpe) = tp match {
@@ -28,8 +29,10 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       case (DoubleType, IntType)   => e.setTp(DoubleType)
       case (DoubleType, FloatType) => e.setTp(DoubleType)
       // The following may actually happen (see referenced TPCDS queries and expression for more details)
+      case (IntType, null)         => e.setTp(IntType) // TPCDS Q21, expr CASE WHEN inv_before > 0 THEN inv_after / inv_before ELSE null END)
       case (DoubleType, null)      => e.setTp(DoubleType) // TPCDS Q43, expr SUM(CASE WHEN (d_day_name='Saturday') THEN ss_sales_price ELSE null END) sat_sales
       case (null, IntType)         => e.setTp(IntType) // TPCDS Q59
+      case (null, DoubleType)      => e.setTp(DoubleType)
     }
   }
 
@@ -45,7 +48,7 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       sl.setTp(typeTag[LBString])
     case cl @ CharLiteral(_) =>
       cl.setTp(typeTag[Char])
-    case nl @ NullLiteral() =>
+    case nl @ NullLiteral =>
       nl.setTp(null) // ??? is this correct
     case fi @ FieldIdent(_, name, _) =>
       schema.findAttribute(name) match {
@@ -55,11 +58,19 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
           aliasesList.find(al => al._2 == name) match {
             case Some(al) => al._1.tp match {
               case null =>
-                checkAndInferExpr(al._1); fi.setTp(al._1.tp)
+                val projs = views.map(v => v.subquery.findProjection(al._1, al._2)).flatten
+                projs.size match {
+                  case 0 => throw new Exception("SQLSemanticCheckerAndTypeInference BUG: No projection in any view exists for " + al._1 + "/" + al._2)
+                  case 1 => fi.setTp(projs(0).tp)
+                  case _ =>
+                    val tps = projs.map(_.tp).distinct
+                    if (tps.size != 1)
+                      throw new Exception("SQLSemanticCheckerAndTypeInference BUG: Too many (" + projs.size + ") projections in views exist of different types " + tps + " for " + al._1 + "/" + al._2)
+                    fi.setTp(tps(0))
+                }
               case _ => fi.setTp(al._1.tp)
             }
-            case None =>
-            //throw new Exception("Attribute " + name + " referenced in SQL query does not exist in any relation.")
+            case None => throw new Exception("Attribute " + name + " referenced in SQL query does not exist in any relation or in any alias.")
           }
       }
     // Arithmetic Operators
@@ -99,6 +110,9 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
     case max @ Max(expr) =>
       checkAndInferExpr(expr)
       max.setTp(expr.tp)
+    case abs @ Abs(expr) =>
+      checkAndInferExpr(expr)
+      abs.setTp(expr.tp)
     // Logical Operators
     case and @ And(left, right) =>
       checkAndInferExpr(left)
@@ -136,6 +150,9 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       checkAndInferExpr(left)
       checkAndInferExpr(right)
       strcon.setTp(left.tp)
+    case upper @ Upper(expr) =>
+      checkAndInferExpr(expr)
+      upper.setTp(expr.tp)
     case not @ Not(expr) =>
       checkAndInferExpr(expr)
       not.setTp(expr.tp)
@@ -169,17 +186,40 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
       distinct.setTp(e.tp)
     case e: SelectStatement => // Nested subquery
       checkAndInfer(e)
+      e.projections match {
+        case ep: ExpressionProjections => ep.size match {
+          case 0 => throw new Exception("SQLSemanticCheckerAndTypeInference BUG: Subquery has no projection, thus it is impossible to infer its type!")
+          case 1 => e.setTp(e.projections.get(0)._1.tp)
+          case _ =>
+            val tps = ep.lst.map(_._1.tp)
+            if (tps.size != 1)
+              throw new Exception("SQLSemanticCheckerAndTypeInference BUG: Too many (" + e.projections.size + ") projections in subquery exist of different types " + tps)
+            e.setTp(tps(0))
+        }
+        case ac: AllColumns => // Do nothing and pray noone will notice :)
+      }
   }
 
   def checkAndInferJoinTree(root: Relation): Unit = root match {
-    case Join(leftParent, Subquery(subquery, _), _, _) => checkAndInfer(subquery)
+    case Join(leftParent, Subquery(subquery, _), _, _) =>
+      checkAndInferJoinTree(leftParent)
+      checkAndInfer(subquery)
+    case Join(Subquery(subquery, _), rightParent, _, _) =>
+      checkAndInferJoinTree(rightParent)
+      checkAndInfer(subquery)
     case Subquery(parent, _) => checkAndInfer(parent)
-    case _ =>
+    case Join((leftParent: Join), SQLTable(_, _), _, _) => checkAndInferJoinTree(leftParent)
+    case Join((leftParent: Join), View(_, _), _, _) => checkAndInferJoinTree(leftParent)
+    // Nothing to infer for the following
+    case Join(SQLTable(_, _), SQLTable(_, _), _, _) =>
+    case SQLTable(_, _) =>
+    // For unknown cases, throw an exception to keep track of them and add them above if necessary
+    case dflt => throw new Exception("Unknown class type " + dflt + " encountered in SQLSemanticCheckerAndTypeInference component!")
   }
 
   def checkAndInfer(node: Node) {
     node match {
-      case UnionAll(top, bottom) =>
+      case UnionIntersectSequence(top, bottom, _) =>
         checkAndInfer(top)
         checkAndInfer(bottom)
       case stmt: SelectStatement => checkAndInfer(stmt)
@@ -187,7 +227,15 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
   }
 
   def checkAndInfer(sqlTree: SelectStatement) {
+    // First, save some info in global vars for later use
     aliasesList = sqlTree.aliases ++ aliasesList
+    views = views ++ sqlTree.withs
+    // Then start inferring
+    sqlTree.withs.foreach(w => checkAndInfer(w.subquery))
+    sqlTree.joinTree match {
+      case Some(tr) => checkAndInferJoinTree(tr)
+      case None     =>
+    }
     sqlTree.where match {
       case Some(expr) => checkAndInferExpr(expr)
       case None       =>
@@ -203,10 +251,6 @@ class SQLSemanticCheckerAndTypeInference(schema: Schema) {
     sqlTree.orderBy match {
       case Some(OrderBy(listExpr)) => listExpr.foreach(expr => checkAndInferExpr(expr._1))
       case None                    =>
-    }
-    sqlTree.joinTrees match {
-      case Some(tr) => tr.foreach(checkAndInferJoinTree(_))
-      case None     =>
     }
     sqlTree.having match {
       case Some(clause) => checkAndInferExpr(clause.having)

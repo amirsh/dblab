@@ -25,7 +25,7 @@ trait LegoRunner {
    *
    * @param queryPlan -- the query plan to be executed
    */
-  def executeQuery(queryPlan: OperatorNode, schema: Schema): Unit
+  def executeQuery(queryPlan: QueryPlanTree, schema: Schema): Unit
 
   /**
    * The starting point of a query runner which uses the arguments as its setting.
@@ -67,34 +67,32 @@ trait LegoRunner {
 
     // Now run all queries specified
     val schema = DDLInterpreter.getCurrSchema
-    val ejNorm = new EquiJoinNormalizer(schema)
+    val subqNorm = new SubquerynNormalizer(schema)
+
     for (q <- filesToExecute.get(".sql").toList.flatten) {
       currQuery = q
       queryName = q.substring(q.lastIndexOf('/') + 1, q.length).replace(".sql", "")
       println("Executing file " + q + " (queryName = " + queryName + ")")
 
       Console.withOut(new PrintStream(getOutputName)) {
-        //executeQuery(currQuery, schema)
-        val qStmt = SQLParser.parse(scala.io.Source.fromFile(q).mkString)
+        val sqlParserTree = SQLParser.parse(scala.io.Source.fromFile(q).mkString)
         if (Config.debugQueryPlan)
-          System.out.println(qStmt + "\n\n")
+          System.out.println("Original SQL Parser Tree:\n" + sqlParserTree + "\n\n")
 
-        val normalizedqStmt = ejNorm.normalize(CTENormalizer.normalize(qStmt))
-        if (Config.debugQueryPlan)
-          System.out.println("After normalization:\n" + normalizedqStmt + "\n\n")
+        val subqueryNormalizedqTree = subqNorm.normalize(sqlParserTree)
+        //if (Config.debugQueryPlan)
+        //System.out.println("After Subqyery Normalization:\n" + subqueryNormalizedqTree + "\n\n")
 
-        new SQLSemanticCheckerAndTypeInference(schema).checkAndInfer(normalizedqStmt)
-        val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(normalizedqStmt)
-        val optimizerTree = {
-          if (q.contains("tpch"))
-            if (!(List("Q16", "Q19", "Q22").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
-          else if (q.contains("tpcds"))
-            if (!(List("Q1", "Q3", "Q6", "Q10", "Q15", "Q19", "Q41", "Q42", "Q52", "Q58", "Q65", "Q69", "Q73", "Q79", "Q85", "Q91", "Q96").contains(queryName))) new NaiveOptimizer(schema).optimize(operatorTree) else operatorTree // TODO -- FIX OPTIMIZER FOR THESE QUERIES
-          else operatorTree
-        }
-        //val optimizerTree = operatorTree // TODO -- FIX OPTIMIZER
+        new SQLSemanticCheckerAndTypeInference(schema).checkAndInfer(subqueryNormalizedqTree)
+        /*val operatorTree = new SQLTreeToOperatorTreeConverter(schema).convert(subqueryNormalizedqTree)
+
         if (Config.debugQueryPlan)
-          System.out.println(optimizerTree + "\n\n")
+          System.out.println("Before Optimizer:\n" + operatorTree + "\n\n")
+
+        val optimizerTree = new NaiveOptimizer(schema).optimize(operatorTree)
+
+        if (Config.debugQueryPlan)
+          System.out.println("After Optimizer:\n" + optimizerTree + "\n\n")
 
         executeQuery(optimizerTree, schema)
 
@@ -121,7 +119,7 @@ trait LegoRunner {
               System.exit(0)
             } else System.out.println("CHECK RESULT FOR QUERY " + q + ": [OK]")
           } else System.out.println("Reference result file not found. Skipping checking of result")
-        }
+        }*/
       }
     }
   }

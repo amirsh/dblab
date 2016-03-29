@@ -11,6 +11,7 @@ object Catalog {
   val schemata = new scala.collection.mutable.HashMap[String, Schema]()
 }
 case class Schema(tables: ArrayBuffer[Table] = ArrayBuffer(), stats: Statistics = Statistics()) {
+  def containsTable(name: String) = tables.find(t => t.name == name).isDefined
   def findTable(name: String) = tables.find(t => t.name == name) match {
     case Some(tab) => tab
     case None      => throw new Exception("Table " + name + " not found in schema!")

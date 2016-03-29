@@ -5,168 +5,203 @@ package optimizer
 
 import schema._
 import OperatorAST._
-
+import scala.collection.mutable.ArrayBuffer
 /* This optimizer is called naive, since it only pushes-up selection predicates to
- * scan operators, and performs no other technique from traditional query optimization
- * (e.g. join reordering). 
+ * scan and join operators, and performs no other technique from traditional query 
+ * optimization (e.g. join reordering). 
  *
  * The tree received by this optimizer is the one built by the SQL parser, thus 
  * _by construction_ has _a single_ select op that performs the where clause, and
  * which is executed after all the scans and joins and aggregations have been 
  * executed. This optimizer pushes up parts of this where clause to the corresponding 
- * scan operators.
+ * scan and join operators operators.
  */
 class NaiveOptimizer(schema: Schema) extends Optimizer {
 
   var linkingOperatorIsAnd = true
   var operatorList: List[OperatorNode] = _
-  val registeredPushedUpSelections = new scala.collection.mutable.HashMap[OperatorNode, Expression]();
 
-  def registerPushUp(cond: Expression, fi: FieldIdent) {
-    val t = schema.tables.find(t => t.findAttribute(fi.name).isDefined) match {
-      case Some(t) => t
-      case None    => throw new Exception("BUG: Attribute " + fi.name + " referenced but no table found with it!")
-    }
-    val scanOperators = operatorList.filter(_.isInstanceOf[ScanOpNode]).map(_.asInstanceOf[ScanOpNode])
-    val scanOpName = t.name + fi.qualifier.getOrElse("")
-    val scanOp = scanOperators.find(so => so.scanOpName == scanOpName) match {
-      case Some(op) => op
-      case None     => throw new Exception("BUG: Scan op " + scanOpName + " referenced but no such operator exists!")
-    }
-    registeredPushedUpSelections.get(scanOp) match {
-      case None => registeredPushedUpSelections += scanOp -> dealiasFieldIdent(cond)
-      case Some(c) => registeredPushedUpSelections += scanOp -> {
-        if (linkingOperatorIsAnd) And(c, dealiasFieldIdent(cond))
-        else Or(c, dealiasFieldIdent(cond))
-      }
+  // Join conditions to be pushed up
+  val joinOpConds = new scala.collection.mutable.HashMap[OperatorNode, ArrayBuffer[Expression]]();
+  // ScanOp conditions to be pushed up
+  val scanOpConds = new scala.collection.mutable.HashMap[OperatorNode, ArrayBuffer[Expression]]();
+
+  def containsField(op: OperatorNode, fld: FieldIdent): Boolean = op match {
+    case JoinOpNode(leftParent, rightParent, joinCond, joinType, leftAlias, rightAlias) =>
+      containsField(leftParent, fld) || containsField(rightParent, fld)
+    case ViewOpNode(qpt, projNames, name) =>
+      System.out.println("projNames of ViewOp " + name + " = " + projNames + " and searching for " + fld.name)
+      projNames.contains(fld.name)
+    case AggOpNode(parent, aggs, gb, aggAlias) =>
+      aggAlias.contains(fld.name) || gb.map(_._2).contains(fld.name)
+    case SelectOpNode(parent, cond, isHaving) =>
+      containsField(parent, fld)
+    case so: ScanOpNode =>
+
+      so.scanOpName == (schema.tables.find(t => t.findAttribute(fld.name).isDefined) match {
+        case Some(tbl) => {
+          // Apparently it is valid to use table name when referencing a field ident. So we 
+          // check for this case here and handle it approprietly
+          if (fld.qualifier.getOrElse("") != tbl.name) tbl.name + fld.qualifier.getOrElse("")
+          else tbl.name
+        }
+        case None => ""
+      })
+    case MapOpNode(parent, mapIndices) =>
+      containsField(parent, fld)
+  }
+
+  def registerScanOpCond(fi: FieldIdent, cond: Expression): Option[Expression] = {
+    schema.tables.find(t => t.findAttribute(fi.name).isDefined) match {
+      case None => Some(cond)
+      case Some(tbl) =>
+        val scanOperators = operatorList.filter(_.isInstanceOf[ScanOpNode]).map(_.asInstanceOf[ScanOpNode])
+
+        val scanOp = scanOperators.find(so => (so.scanOpName == tbl.name) || (so.scanOpName == tbl.name + fi.qualifier.getOrElse(""))) match {
+          case Some(op) => op
+          case None     => throw new Exception("BUG: Scan op " + tbl.name + " referenced but no such operator exists!")
+        }
+
+        val buf = scanOpConds.getOrElseUpdate(scanOp, new ArrayBuffer[Expression]())
+        buf += cond
+        None
     }
   }
 
-  def isPrimitiveExpression(expr: Expression) = expr match {
-    case Equals(_, _) | NotEquals(_, _) | LessThan(_, _) | LessOrEqual(_, _) | GreaterThan(_, _) | GreaterOrEqual(_, _) | Like(_, _) | In(_, _) => true
-    case _ => false
+  def reorderPredicates(expr: Expression) = expr match {
+    case And(lhs, rhs)    => And(rhs, lhs)
+    case Equals(lhs, rhs) => Equals(rhs, lhs)
   }
 
-  def dealiasFieldIdent(expr: Expression): Expression = {
-    val newExpr = expr match {
-      case FieldIdent(qualifier, name, symbol) => FieldIdent(None, name, symbol)
-      case And(lhs, rhs)                       => And(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case Or(lhs, rhs)                        => Or(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case Equals(lhs, rhs)                    => Equals(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case NotEquals(lhs, rhs)                 => NotEquals(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case LessThan(lhs, rhs)                  => LessThan(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case LessOrEqual(lhs, rhs)               => LessOrEqual(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case GreaterThan(lhs, rhs)               => GreaterThan(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case GreaterOrEqual(lhs, rhs)            => GreaterOrEqual(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case Like(lhs, rhs)                      => Like(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case Add(lhs, rhs)                       => Add(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case In(expr, list)                      => In(dealiasFieldIdent(expr), list)
-      case Substring(expr, start, end)         => Substring(dealiasFieldIdent(expr), start, end)
-      case UnaryMinus(expr)                    => UnaryMinus(dealiasFieldIdent(expr))
-      case Subtract(lhs, rhs)                  => Subtract(dealiasFieldIdent(lhs), dealiasFieldIdent(rhs))
-      case c: LiteralExpression                => expr
+  def registerJoinOpCond(fi1: FieldIdent, fi2: FieldIdent, cond: Expression) {
+    val joinOperators = operatorList.filter(_.isInstanceOf[JoinOpNode]).map(_.asInstanceOf[JoinOpNode]).sortWith((a, b) => a.toList.length < b.toList.length)
+
+    var reorder = false
+    System.out.println("Searching to find operator for join cond " + cond + "\n")
+    joinOperators.find(jo => {
+      val containsInExistingOrder = containsField(jo.left, fi1) && containsField(jo.right, fi2)
+      val containsInReverseOrder = containsField(jo.right, fi1) && containsField(jo.left, fi2)
+      System.out.println(jo + "/" + containsInExistingOrder + "/" + containsInReverseOrder + "/(" + containsField(jo.left, fi1) + "/" + containsField(jo.right, fi2) + ")" + "(" + containsField(jo.right, fi1) + "/" + containsField(jo.left, fi2) + ")")
+      if (containsInExistingOrder) true
+      else if (containsInReverseOrder) {
+        reorder = true
+        true
+      } else false
+    }) match {
+      case Some(jo) =>
+        //System.out.println("Adding cond " + cond + " to operator " + jo);   
+        val buf = joinOpConds.getOrElseUpdate(jo, new ArrayBuffer[Expression]())
+        buf += {
+          if (reorder) reorderPredicates(cond)
+          else cond
+        }
+      case None => throw new Exception("LegoBase Optimizer: Couldn't find join operator for condition " + cond)
     }
-    newExpr.setTp(expr.tp)
-    newExpr
   }
 
-  def processPrimitiveExpression(expr: Expression): FieldIdent = expr match {
-    case Equals((fi: FieldIdent), _)         => fi
-    case NotEquals((fi: FieldIdent), _)      => fi
-    case LessThan((fi: FieldIdent), _)       => fi
-    case LessOrEqual((fi: FieldIdent), _)    => fi
-    case GreaterThan((fi: FieldIdent), _)    => fi
-    case GreaterOrEqual((fi: FieldIdent), _) => fi
-    case Like((fi: FieldIdent), _)           => fi
-    case In((fi: FieldIdent), _)             => fi
-    case In(expr, _)                         => processPrimitiveExpression(expr)
-    case Substring((fi: FieldIdent), _, _)   => fi
+  def analysePushingUpCondition(parent: OperatorNode, cond: Expression): Option[Expression] = {
+    def isArithmeticBinaryOp(e: Expression) = e match {
+      case Subtract(_, _) | Multiply(_, _) | Add(_, _) | Divide(_, _) => true
+      case _ => false
+    }
+
+    System.out.println("Analyzing condition " + cond)
+    cond match {
+      case And(lhs, rhs) =>
+        val lhsPushed = analysePushingUpCondition(parent, lhs)
+        val rhsPushed = analysePushingUpCondition(parent, rhs)
+        (lhsPushed, rhsPushed) match {
+          case (None, None)       => None
+          case (Some(_), None)    => lhsPushed
+          case (None, Some(_))    => rhsPushed
+          case (Some(l), Some(r)) => Some(And(l, r))
+        }
+
+      case Or(lhs, rhs) =>
+        val lhsPushed = analysePushingUpCondition(parent, lhs)
+        val rhsPushed = analysePushingUpCondition(parent, rhs)
+        (lhsPushed, rhsPushed) match {
+          case (None, None)       => None
+          case (Some(_), None)    => lhsPushed
+          case (None, Some(_))    => rhsPushed
+          case (Some(l), Some(r)) => Some(Or(l, r))
+        }
+
+      case Equals(fi1: FieldIdent, fi2: FieldIdent) =>
+        registerJoinOpCond(fi1, fi2, cond)
+        None
+      case Equals(fi: FieldIdent, lit: LiteralExpression) => registerScanOpCond(fi, cond)
+      case Equals(fi: FieldIdent, e) if isArithmeticBinaryOp(e) => Some(cond)
+      case Equals(_, _) => Some(cond)
+
+      case NotEquals(fi: FieldIdent, lit: LiteralExpression) => registerScanOpCond(fi, cond)
+      case GreaterThan(fi: FieldIdent, lit: LiteralExpression) => registerScanOpCond(fi, cond)
+      case GreaterOrEqual(fi: FieldIdent, lit: LiteralExpression) => registerScanOpCond(fi, cond)
+      case LessThan(fi: FieldIdent, lit: LiteralExpression) => registerScanOpCond(fi, cond)
+      case LessOrEqual(fi: FieldIdent, lit: LiteralExpression) => registerScanOpCond(fi, cond)
+      case Like(fi: FieldIdent, lit: LiteralExpression) => registerScanOpCond(fi, cond)
+      case In(fi: FieldIdent, _) => registerScanOpCond(fi, cond)
+
+      // TODO -- Can optimize further by looking at lhs and rhs recursively 
+      case GreaterThan(_, _) => Some(cond)
+      case LessThan(_, _) => Some(cond)
+      case LessOrEqual(_, _) => Some(cond)
+    }
   }
 
-  def analysePushingUpCondition(parent: OperatorNode, cond: Expression): Option[Expression] = cond match {
-    case And(lhs, rhs) =>
-      (isPrimitiveExpression(lhs), isPrimitiveExpression(rhs)) match {
-        case (true, true) =>
-          registerPushUp(lhs, processPrimitiveExpression(lhs));
-          registerPushUp(rhs, processPrimitiveExpression(rhs));
-          None
-        case (false, true) =>
-          analysePushingUpCondition(parent, lhs) match {
-            case None =>
-              registerPushUp(rhs, processPrimitiveExpression(rhs));
-              None
-            case Some(expr) =>
-              Some(And(expr, rhs))
-          }
-        case (true, false) =>
-          analysePushingUpCondition(parent, rhs) match {
-            case None =>
-              registerPushUp(lhs, processPrimitiveExpression(lhs));
-              None
-            case Some(expr) =>
-              Some(And(lhs, expr))
-          }
-        case (false, false) =>
-          (analysePushingUpCondition(parent, lhs), analysePushingUpCondition(parent, rhs)) match {
-            case (None, None) => None
-          }
-      }
-    case Or(lhs, rhs) =>
-      linkingOperatorIsAnd = false
-      val res = (isPrimitiveExpression(lhs), isPrimitiveExpression(rhs)) match {
-        case (true, true) =>
-          registerPushUp(lhs, processPrimitiveExpression(lhs));
-          registerPushUp(rhs, processPrimitiveExpression(rhs));
-          None
-        case (false, false) =>
-          (analysePushingUpCondition(parent, lhs), analysePushingUpCondition(parent, rhs)) match {
-            case (None, None) => Some(Or(lhs, rhs))
-          }
-      }
-      linkingOperatorIsAnd = true
-      res
-    case c if isPrimitiveExpression(c) => Some(c)
-    case _                             => Some(cond) // ??
+  /** Connects the predicates using AND */
+  private def connectPredicates(eq: Seq[Expression]): Expression = {
+    eq.tail.foldLeft(eq.head.asInstanceOf[Expression])((elem, acc) => And(acc, elem))
   }
 
   def pushUpCondition(tree: OperatorNode): OperatorNode = tree match {
     case JoinOpNode(leftParent, rightParent, joinCond, joinType, leftAlias, rightAlias) =>
-      JoinOpNode(pushUpCondition(leftParent), pushUpCondition(rightParent), joinCond, joinType, leftAlias, rightAlias)
-    case ScanOpNode(table, _, _) => registeredPushedUpSelections.get(tree) match {
-      case Some(expr) =>
-        SelectOpNode(tree, expr, false)
-      case None => tree
+      val newCond = (joinOpConds.get(tree) match {
+        case Some(expr) => connectPredicates(expr)
+        case None       => joinCond
+      }).asInstanceOf[Expression]
+      JoinOpNode(pushUpCondition(leftParent), pushUpCondition(rightParent), newCond, joinType, leftAlias, rightAlias)
+    case ScanOpNode(table, _, _) => scanOpConds.get(tree) match {
+      case Some(expr) => SelectOpNode(tree, connectPredicates(expr), false)
+      case None       => tree
     }
-    case SubqueryNode(parent) => SubqueryNode(optimizeInContext(parent))
+    case AggOpNode(parent, aggs, gb, aggNames) => AggOpNode(pushUpCondition(parent), aggs, gb, aggNames)
+    case SubqueryNode(parent)                  => SubqueryNode(optimizeInContext(parent))
+    case ViewOpNode(parent, _, name)           => tree
+    case OrderByNode(parent, orderBy)          => OrderByNode(optimizeNode(parent), orderBy)
+    case SelectOpNode(parent, cond, isHaving)  => SelectOpNode(optimizeNode(parent), cond, isHaving)
   }
 
   def optimizeInContext(node: OperatorNode): OperatorNode = {
     // Save old map, then start processing the given node with an empty map and finally
     // restore original map with proceeding with rest of original query. Return the result
     // of processing the given node. This method is useful for subqueries
-    val oldMap = registeredPushedUpSelections
-    registeredPushedUpSelections.clear()
+    val oldJoinOpConds = joinOpConds.clone()
+    val oldScanOpConds = scanOpConds.clone()
+    joinOpConds.clear()
+    scanOpConds.clear()
     val res = optimizeNode(node)
-    registeredPushedUpSelections.clear()
-    registeredPushedUpSelections ++= oldMap
+    joinOpConds.clear()
+    scanOpConds.clear()
+    joinOpConds ++= oldJoinOpConds
+    scanOpConds ++= oldScanOpConds
     res
   }
 
   def optimizeNode(tree: OperatorNode): OperatorNode = tree match {
-    case ScanOpNode(_, _, _) => tree
-    case SelectOpNode(parent, cond, isHaving) if isHaving == false =>
-      //System.out.println("SelectOp found with condition " + cond);
-      analysePushingUpCondition(parent, cond) match {
-        case Some(expr) if isPrimitiveExpression(expr) =>
-          registerPushUp(cond, processPrimitiveExpression(expr))
-          pushUpCondition(parent)
-        case Some(expr) => SelectOpNode(pushUpCondition(parent), expr, false)
-        case None       => pushUpCondition(parent)
+    case ProjectOpNode(parent, projNames, origFieldNames) => ProjectOpNode(optimizeNode(parent), projNames, origFieldNames)
+    case ScanOpNode(_, _, _)                              => tree
+    case SelectOpNode(parent, cond, isHaving) /*if isHaving == false*/ =>
+      val remCond = analysePushingUpCondition(parent, cond)
+      val newParentTree = pushUpCondition(parent)
+      remCond match {
+        case Some(expr) => SelectOpNode(newParentTree, expr, false)
+        case None       => newParentTree
       }
-    case SelectOpNode(parent, cond, isHaving) if isHaving == true =>
-      SelectOpNode(optimizeNode(parent), cond, isHaving)
+    //case SelectOpNode(parent, cond, isHaving) if isHaving == true =>
+    //  SelectOpNode(optimizeNode(parent), cond, isHaving)
     case JoinOpNode(leftParent, rightParent, joinCond, joinType, leftAlias, rightAlias) =>
-      JoinOpNode(optimizeInContext(leftParent), optimizeInContext(rightParent), joinCond, joinType, leftAlias, rightAlias)
+      JoinOpNode(optimizeNode(leftParent), optimizeNode(rightParent), joinCond, joinType, leftAlias, rightAlias)
     case SubquerySingleResultNode(parent)      => SubquerySingleResultNode(optimizeNode(parent))
     case MapOpNode(parent, mapIndices)         => MapOpNode(optimizeNode(parent), mapIndices)
     case AggOpNode(parent, aggs, gb, aggAlias) => AggOpNode(optimizeNode(parent), aggs, gb, aggAlias)
@@ -174,10 +209,16 @@ class NaiveOptimizer(schema: Schema) extends Optimizer {
     case PrintOpNode(parent, projNames, limit) => PrintOpNode(optimizeNode(parent), projNames, limit)
     case SubqueryNode(parent)                  => SubqueryNode(optimizeNode(parent))
     case UnionAllOpNode(top, bottom)           => UnionAllOpNode(optimizeNode(top), optimizeNode(bottom))
+    case ViewOpNode(parent, projs, name)       => ViewOpNode(optimizeNode(parent), projs, name)
   }
 
-  def optimize(tree: OperatorNode): OperatorNode = {
-    operatorList = tree.toList
-    optimizeNode(tree)
+  def optimizeRootNode(rn: OperatorNode): OperatorNode = {
+    operatorList = rn.toList
+    optimizeNode(rn)
+  }
+
+  def optimize(qp: QueryPlanTree): QueryPlanTree = {
+    val optimizedViews = qp.views.map(v => ViewOpNode(optimizeRootNode(v.parent), v.projNames, v.name))
+    QueryPlanTree(optimizeRootNode(qp.rootNode), optimizedViews)
   }
 }

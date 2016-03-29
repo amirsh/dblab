@@ -13,6 +13,7 @@ import sc.pardis.annotations.{ deep, metadeep, dontInline, needs }
 import sc.pardis.shallow.{ Record, DynamicCompositeRecord }
 import scala.reflect.ClassTag
 import sc.pardis.shallow.{ OptimalString, Record, DynamicCompositeRecord }
+import ch.epfl.data.dblab.legobase.frontend._
 
 @metadeep(
   folder = "",
@@ -31,6 +32,18 @@ class MetaInfo
   def consume(tuple: Record)
   @inline var child: Operator[Any] = null
   var stop = false
+  var initialized = false
+
+  def setupLinkWithParent(parent: Operator[Any], child: Operator[Any]) {
+    if (!parent.initialized) {
+      if (parent.child != null)
+        throw new Exception("LegoBase Push Engine BUG: Parent's child is already set to " + parent.child + " and it is being attempted to change to " + child)
+      // Now initialize
+      parent.child = child
+      parent.open
+      parent.initialized = true
+    }
+  }
 }
 
 /**
@@ -57,7 +70,9 @@ object MultiMap {
     }
   }
   def reset() { i = 0 }
-  def consume(tuple: Record) { throw new Exception("PUSH ENGINE BUG:: Consume function in ScanOp should never be called!!!!\n") }
+  def consume(tuple: Record) {
+    throw new Exception("LegoBase Push Engine BUG:: Consume function in ScanOp should never be called!\n")
+  }
 }
 
 /* Amir (TODO): the following line removes the need for stop */
@@ -73,11 +88,10 @@ object MultiMap {
  * everything
  */
 
-@deep case class PrintOp[A](parent: Operator[A])(printFunc: A => Unit, limit: Int) extends Operator[A] { self =>
+@deep case class PrintOp[A](parent: Operator[A])(printFunc: A => Unit, limit: Int) extends Operator[A] {
   var numRows = (0)
   def open() {
-    parent.child = self;
-    parent.open;
+    setupLinkWithParent(parent, this)
   }
   def next() = {
     parent.next;
@@ -101,9 +115,9 @@ object MultiMap {
  * @param selectPred the predicate which is used for filtering elements. It has
  * the same effect as WHERE clause in SQL.
  */
-@deep class SelectOp[A](parent: Operator[A])(selectPred: A => Boolean) extends Operator[A] {
+@deep case class SelectOp[A](parent: Operator[A])(selectPred: A => Boolean) extends Operator[A] {
   def open() {
-    parent.child = this; parent.open
+    setupLinkWithParent(parent, this)
   }
   def next() = parent.next
   def reset() { parent.reset }
@@ -128,9 +142,9 @@ object MultiMap {
   val numAggRecordFields = 1 + numAggs // 1 for the key
 
   def open() {
-    parent.child = this;
-    parent.open
+    setupLinkWithParent(parent, this)
   }
+
   def next() {
     parent.next
     hm.foreach { pair =>
@@ -153,7 +167,8 @@ object MultiMap {
 
     var i: scala.Int = 0
     aggFuncs.foreach { aggFun =>
-      elem.setField(aggNames(i), aggFun(tuple.asInstanceOf[A], elem.getField(aggNames(i)).get.asInstanceOf[Double]))
+      val newValue = aggFun(tuple.asInstanceOf[A], elem.getField(aggNames(i)).get.asInstanceOf[Double])
+      elem.setField(aggNames(i), newValue)
       i += 1
     }
   }
@@ -167,7 +182,9 @@ object MultiMap {
  */
 @deep class MapOp[A](parent: Operator[A])(mapFuncs: Function1[A, Unit]*) extends Operator[A] {
   def reset { parent.reset }
-  def open() { parent.child = this; parent.open }
+  def open() {
+    setupLinkWithParent(parent, this)
+  }
   def next() { parent.next }
   def consume(tuple: Record) {
     mapFuncs foreach (mf => mf(tuple.asInstanceOf[A]))
@@ -182,7 +199,7 @@ object MultiMap {
  * @param orderingFunc the function which specifies the total ordering between to elements
  */
 @needs[TreeSet[Any]]
-@deep class SortOp[A](parent: Operator[A])(orderingFunc: Function2[A, A, Int]) extends Operator[A] {
+@deep case class SortOp[A](parent: Operator[A])(orderingFunc: Function2[A, A, Int]) extends Operator[A] {
   val sortedTree = new TreeSet()(
     new Ordering[A] {
       def compare(o1: A, o2: A) = orderingFunc(o1, o2)
@@ -196,7 +213,9 @@ object MultiMap {
     }
   }
   def reset() { parent.reset; open }
-  def open() { parent.child = this; parent.open }
+  def open() {
+    setupLinkWithParent(parent, this)
+  }
   def consume(tuple: Record) { sortedTree += tuple.asInstanceOf[A] }
 }
 
@@ -217,7 +236,7 @@ object MultiMap {
  */
 @needs[scala.collection.mutable.MultiMap[Any, Any]]
 @deep
-class HashJoinOp[A <: Record, B <: Record, C](val leftParent: Operator[A], val rightParent: Operator[B], leftAlias: String, rightAlias: String)(val joinCond: (A, B) => Boolean)(val leftHash: A => C)(val rightHash: B => C) extends Operator[DynamicCompositeRecord[A, B]] {
+case class HashJoinOp[A <: Record, B <: Record, C](val leftParent: Operator[A], val rightParent: Operator[B], leftAlias: String, rightAlias: String)(val joinCond: (A, B) => Boolean)(val leftHash: A => C)(val rightHash: B => C) extends Operator[DynamicCompositeRecord[A, B]] {
   def this(leftParent: Operator[A], rightParent: Operator[B])(joinCond: (A, B) => Boolean)(leftHash: A => C)(rightHash: B => C) = this(leftParent, rightParent, "", "")(joinCond)(leftHash)(rightHash)
   @inline var mode: scala.Int = 0
 
@@ -227,17 +246,17 @@ class HashJoinOp[A <: Record, B <: Record, C](val leftParent: Operator[A], val r
     rightParent.reset; leftParent.reset; hm.clear;
   }
   def open() = {
-    leftParent.child = this
-    rightParent.child = this
-    leftParent.open
-    rightParent.open
+    setupLinkWithParent(leftParent, this)
+    setupLinkWithParent(rightParent, this)
   }
+
   def next() {
     leftParent.next
     mode += 1
     rightParent.next
     mode += 1
   }
+
   def consume(tuple: Record) {
     if (mode == 0) {
       val k = leftHash(tuple.asInstanceOf[A])
@@ -269,8 +288,7 @@ class HashJoinOp[A <: Record, B <: Record, C](val leftParent: Operator[A], val r
   val hm = MultiMap[B, A]
 
   def open() {
-    parent.child = this
-    parent.open
+    setupLinkWithParent(parent, this)
   }
   def reset() { parent.reset; hm.clear; open }
   def next() {
@@ -306,10 +324,8 @@ class LeftHashSemiJoinOp[A, B, C](leftParent: Operator[A], rightParent: Operator
   val hm = MultiMap[C, B]
 
   def open() {
-    leftParent.child = this
-    rightParent.child = this
-    leftParent.open
-    rightParent.open
+    setupLinkWithParent(leftParent, this)
+    setupLinkWithParent(rightParent, this)
   }
   def reset() { rightParent.reset; leftParent.reset; hm.clear; }
   def next() {
@@ -348,10 +364,8 @@ class NestedLoopsJoinOp[A <: Record, B <: Record](leftParent: Operator[A], right
   var leftTuple = null.asInstanceOf[A]
 
   def open() {
-    rightParent.child = this
-    leftParent.child = this
-    rightParent.open
-    leftParent.open
+    setupLinkWithParent(leftParent, this)
+    setupLinkWithParent(rightParent, this)
   }
   def reset() = { rightParent.reset; leftParent.reset; leftTuple = null.asInstanceOf[A] }
   def next() { leftParent.next }
@@ -378,8 +392,7 @@ class NestedLoopsJoinOp[A <: Record, B <: Record](leftParent: Operator[A], right
 class SubquerySingleResult[A](parent: Operator[A]) extends Operator[A] {
   var result = null.asInstanceOf[A]
   def open() {
-    parent.child = this
-    parent.open
+    setupLinkWithParent(parent, this)
     parent.next
     //throw new Exception("PUSH ENGINE BUG:: Open function in SubqueryResult should never be called!!!!\n")
   }
@@ -419,10 +432,8 @@ class HashJoinAnti[A: Manifest, B, C](leftParent: Operator[A], rightParent: Oper
   val hm = MultiMap[C, A]
 
   def open() {
-    leftParent.child = this
-    leftParent.open
-    rightParent.child = this
-    rightParent.open
+    setupLinkWithParent(leftParent, this)
+    setupLinkWithParent(rightParent, this)
   }
   def reset() { rightParent.reset; leftParent.reset; hm.clear; }
   def next() {
@@ -459,32 +470,25 @@ class HashJoinAnti[A: Manifest, B, C](leftParent: Operator[A], rightParent: Oper
  */
 @needs[Array[Any]]
 @deep
-class ViewOp[A: Manifest](parent: Operator[A]) extends Operator[A] {
+case class ViewOp[A: Manifest](parent: Operator[A]) extends Operator[A] {
   var size = 0
   val table = new Array[A](48000000) // TODO-GEN: make this from statistics
-  @inline var initialized = false
 
   def open() {
-    parent.child = this
-    parent.open
+    setupLinkWithParent(parent, this)
+    parent.next
   }
   def reset() {}
   def next() {
-    if (!initialized) {
-      parent.next
-      initialized = true
-    }
-    var idx = 0
-    while (!stop && idx < size) {
-      val e = table(idx)
-      idx += 1
-      child.consume(e.asInstanceOf[Record])
-    }
+    throw new Exception("LegoBase Push Engine BUG: Next function cannot be called for views. Scan operators should be created for them instead.")
   }
+
   def consume(tuple: Record) {
     table(size) = tuple.asInstanceOf[A]
     size += 1
   }
+
+  def getDataArray() = table.slice(0, size)
 }
 
 /**
@@ -506,11 +510,9 @@ class LeftOuterJoinOp[A <: Record, B <: Record, C](val leftParent: Operator[A], 
 
   val defaultB: B = Record.getDefaultRecord[B]()
 
-  def open() = {
-    leftParent.child = this
-    leftParent.open
-    rightParent.child = this
-    rightParent.open
+  def open() {
+    setupLinkWithParent(leftParent, this)
+    setupLinkWithParent(rightParent, this)
   }
   def next() {
     rightParent.next
@@ -548,13 +550,16 @@ class LeftOuterJoinOp[A <: Record, B <: Record, C](val leftParent: Operator[A], 
  *
  * @param leftParent the left parent operator of this operator
  * @param rightParent the right parent operator of this operator
+ *
+ * TODO: Possible optimizations:
+ *          1. Current Union all just returns all tuples from both parents. However, it
+ *             should project only the columns from the select of each of the subqueries
+ *             (or there should be a projection operator for that purpose)
  */
 class UnionAllOperator(val leftParent: Operator[Any], val rightParent: Operator[Any]) extends Operator[Record] {
-  def open() = {
-    leftParent.child = this
-    leftParent.open
-    rightParent.child = this
-    rightParent.open
+  def open() {
+    setupLinkWithParent(leftParent, this)
+    setupLinkWithParent(rightParent, this)
   }
   def next() {
     rightParent.next
@@ -562,6 +567,26 @@ class UnionAllOperator(val leftParent: Operator[Any], val rightParent: Operator[
   }
   def consume(tuple: Record) {
     child.consume(tuple)
+  }
+  def reset() {}
+}
+
+class ProjectOperator(val parent: Operator[Any], val projNames: Seq[String], val projectExpr: Seq[Expression]) extends Operator[Record] {
+  def open() = {
+    parent.child = this
+    parent.open
+  }
+  def next() {
+    parent.next
+  }
+  def consume(tuple: Record) {
+    val projs = projectExpr.map(pe => pe match {
+      case FieldIdent(_, name, _) => tuple.getField(name).get
+      case _ =>
+        LegoInterpreter.parseExpression(pe, tuple)
+    })
+    val newRecord = new LegobaseRecord(projNames zip projs)
+    child.consume(newRecord)
   }
   def reset() {}
 }

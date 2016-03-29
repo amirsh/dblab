@@ -7,6 +7,7 @@ import frontend._
 import ch.epfl.data.dblab.legobase.frontend.OperatorAST._
 import storagemanager._
 import scala.reflect._
+import scala.util.Random
 import scala.reflect.runtime.universe._
 import scala.collection.mutable.ArrayBuffer
 import ch.epfl.data.dblab.legobase.queryengine.push._
@@ -17,22 +18,21 @@ import sc.pardis.shallow.{ OptimalString, Record, DynamicCompositeRecord }
  * The main object for interpreting queries.
  */
 object LegoInterpreter extends LegoRunner {
-  def main(args: Array[String]) {
-    /* NEW EXECUTION COMMAND FORMAT */
-    run(args);
-    return ;
 
-    /* OLD EXECUTION COMMAND FORMAT */
+  val rndGen = new Random()
+
+  def main(args: Array[String]) {
     // Some checks to avoid silly exceptions
     if (args.length < 3) {
       System.out.println("ERROR: Invalid number (" + args.length + ") of command line arguments!")
-      System.out.println("USAGE: run <data_folder> <scaling_factor_number> <list of queries to run>")
-      System.out.println("     : data_folder_name should contain folders named sf0.1 sf1 sf2 sf4 etc")
+      System.out.println("USAGE: run <data_folder> <list of folders or files to run (acceptable file extensions .ddl .ri .sql .result) >")
       System.exit(0)
     }
 
     run(args)
   }
+
+  val activeViews = new scala.collection.mutable.HashMap[String, ViewOp[_]]()
 
   /**
    * Interprets the given query for the given schema
@@ -40,8 +40,16 @@ object LegoInterpreter extends LegoRunner {
    * @param query the input operator tree
    * @param schema the input schema
    */
-  def executeQuery(operatorTree: OperatorNode, schema: Schema): Unit = {
-    val qp = convertOperator(operatorTree)
+  def executeQuery(operatorTree: QueryPlanTree, schema: Schema): Unit = {
+    // First calculate the views if any
+    operatorTree.views.foreach(v => {
+      val vo = new ViewOp(convertOperator(v.parent))
+      vo.open
+      activeViews += v.name -> vo
+    })
+
+    // Then execute main query plan tree
+    val qp = convertOperator(operatorTree.rootNode)
     // Execute tree
     for (i <- 0 until Config.numRuns) {
       Utilities.time({
@@ -120,7 +128,7 @@ object LegoInterpreter extends LegoRunner {
         case d: Double        => printf("%.2f|", d) // TODO -- Precision should not be hardcoded
         case str: String      => printf("%s|", str)
         case s: OptimalString => printf("%s|", s.string)
-        case _                => //throw new Exception("Do not know how to print member " + v + " of class " + cls)
+        case _                => throw new Exception("Do not know how to print member " + v + " of class " + cls + " in recond " + rec)
       }
     }
     order.size match {
@@ -159,9 +167,11 @@ object LegoInterpreter extends LegoRunner {
       //case (FloatType, DoubleType) => n1.asInstanceOf[Float].toDouble -> n2
       //case (DoubleType, FloatType) => n1 -> n2.asInstanceOf[Float].toDouble
       case (DoubleType, IntType) => n1 -> n2.asInstanceOf[Int].toDouble
-      case _ =>
-        n1.asInstanceOf[Double].toDouble -> n2.asInstanceOf[Double].toDouble // FIXME FIXME FIXME THIS SHOULD BE HAPPENING, TYPE INFERENCE BUG
-      //case (x, y)                  => throw new Exception(s"Does not know how to find the common type for $x and $y")
+      case (_, null)             => n1 -> n2
+      case (null, _)             => n1 -> n2
+      //case _ =>
+      //n1.asInstanceOf[Double].toDouble -> n2.asInstanceOf[Double].toDouble // FIXME FIXME FIXME THIS SHOULD BE HAPPENING, TYPE INFERENCE BUG
+      case (x, y)                => throw new Exception(s"Does not know how to find the common type for $x and $y")
     }).asInstanceOf[(Any, Any)]
   }
 
@@ -199,7 +209,7 @@ object LegoInterpreter extends LegoRunner {
     case DoubleLiteral(v)               => v
     case IntLiteral(v)                  => v
     case StringLiteral(v)               => GenericEngine.parseString(v)
-    case NullLiteral()                  => null
+    case NullLiteral                    => null
     case CharLiteral(v)                 => v
     // Arithmetic Operators
     case Add(left, right) =>
@@ -210,7 +220,10 @@ object LegoInterpreter extends LegoRunner {
       computeNumericExpression(left, right, (x, y) => x * y, t, t2)(left.tp, right.tp)
     case Divide(left, right) =>
       // TODO: Check if this gives the correct result -- also fix asInstanceOf
-      computeNumericExpression(left, right, (x, y) => x.toInt / (y.asInstanceOf[Int]), t, t2)(left.tp, right.tp)
+      computeNumericExpression(left, right, (x, y) => x.toInt / {
+        if (y.isInstanceOf[Double]) y.asInstanceOf[Double]
+        else y.asInstanceOf[Int]
+      }, t, t2)(left.tp, right.tp)
     case UnaryMinus(expr) => computeNumericExpression(IntLiteral(-1), expr, (x, y) => x * y, t, t2)(expr.tp, expr.tp)
     // Logical Operators
     case Equals(left, right) =>
@@ -265,7 +278,8 @@ object LegoInterpreter extends LegoRunner {
       }
     case In(expr, values) => {
       val c = parseExpression(expr, t, t2)
-      if (values.contains(c)) true
+      val v = values.map(parseExpression(_, t, t2))
+      if (v.contains(c)) true
       else false
     }
     case StringConcat(str1, str2) =>
@@ -288,6 +302,7 @@ object LegoInterpreter extends LegoRunner {
   def parseJoinClause(e: Expression): (Expression, Expression) = e match {
     case Equals(left, right) => (left, right)
     case And(left, equals)   => parseJoinClause(left)
+    case GreaterThan(_, _)   => throw new Exception("LegoBase currently does not support Theta-Joins. This is either a problem with the query (e.g. GreaterThan on ON join clause) or a bug of the optimizer. ")
   }
 
   def createJoinOperator(leftParent: OperatorNode, rightParent: OperatorNode, joinCond: Expression, joinType: JoinType, leftAlias: String, rightAlias: String): Operator[_] = {
@@ -317,6 +332,9 @@ object LegoInterpreter extends LegoRunner {
   }
 
   def createAggOpOperator(parentOp: OperatorNode, aggs: Seq[Expression], gb: Seq[(Expression, String)], aggNames: Seq[String]): Operator[_] = {
+    System.out.println(aggs)
+    System.out.println(gb)
+    System.out.println(aggNames)
     val aggFuncs: Seq[(Record, Double) => Double] = aggs.map(p => {
       (t: Record, currAgg: Double) =>
         p match {
@@ -336,6 +354,7 @@ object LegoInterpreter extends LegoRunner {
           }
           case IntLiteral(v)    => v
           case DoubleLiteral(v) => v
+          case CharLiteral(v)   => v
         }
     })
 
@@ -388,26 +407,29 @@ object LegoInterpreter extends LegoRunner {
           case d if d == typeTag[Double]      => (k1.asInstanceOf[Double] - k2.asInstanceOf[Double]) * 100
           case c if c == typeTag[Char]        => k1.asInstanceOf[Char] - k2.asInstanceOf[Char]
           case s if s == typeTag[VarCharType] => k1.asInstanceOf[OptimalString].diff(k2.asInstanceOf[OptimalString])
-          case _                              => (k1.asInstanceOf[Double] - k2.asInstanceOf[Double]) * 100 // TODO -- Type inference bug -- there should be absolutely no need for that and this will soon DIE
+          //case _                              => (k1.asInstanceOf[Double] - k2.asInstanceOf[Double]) * 100 // TODO -- Type inference bug -- there should be absolutely no need for that and this will soon DIE
         }).asInstanceOf[Int]
         if (res != 0) {
           stop = true
           if (e._2 == DESC) res = -res
         }
       }
-      res
+      // If after all columns, there is still a tie, break it arbitraril
+      if (res == 0) kv1.hashCode() - kv2.hashCode()
+      else res
     })
   }
 
   def createPrintOperator(parent: OperatorNode, projs: Seq[(Expression, Option[String])], limit: Int) = {
     val finalProjs = projs.map(p => p._1 match {
-      case c if (!p._2.isDefined && p._1.isInstanceOf[Aggregation]) =>
-        throw new Exception("LegoBase limitation: Aggregates must always be aliased (e.g. SUM(...) AS TOTAL)")
+      case c if (!p._2.isDefined && p._1.isAggregateOpExpr) =>
+        throw new Exception("LegoBase limitation: Aggregates must always be aliased (e.g. SUM(...) AS TOTAL) -- aggregate " + p._1 + " was not ")
       case _ => p._1 match {
         case agg if p._1.isAggregateOpExpr => FieldIdent(None, p._2.get)
         // TODO -- The following line shouldn't be necessary in a clean solution
         case Year(_) | Substring(_, _, _)  => FieldIdent(None, p._2.get)
-        case _                             => p._1
+        case c if p._2.isDefined           => FieldIdent(None, p._2.get)
+        case _                             => p._1 // last chance
       }
     })
 
@@ -439,5 +461,8 @@ object LegoInterpreter extends LegoRunner {
       new SubquerySingleResult(convertOperator(parent))
     case UnionAllOpNode(top, bottom) =>
       new UnionAllOperator(convertOperator(top), convertOperator(bottom))
+    case ProjectOpNode(parent, projNames, origFieldNames) =>
+      new ProjectOperator(convertOperator(parent), projNames, origFieldNames)
+    case ViewOpNode(_, _, name) => ScanOp(activeViews(name).getDataArray())
   }
 }

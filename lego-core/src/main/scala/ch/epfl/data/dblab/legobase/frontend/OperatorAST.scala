@@ -4,8 +4,16 @@ package frontend
 
 import schema._
 import scala.reflect._
+import scala.collection.mutable.ArrayBuffer
 
 object OperatorAST {
+
+  case class QueryPlanTree(rootNode: OperatorNode, views: ArrayBuffer[ViewOpNode]) {
+    override def toString() = {
+      views.map(v => v.name + ":\n" + v.parent.toString + "\n").mkString("\n") + "\n" + rootNode.toString
+    }
+  }
+
   abstract class OperatorNode {
     def toList(): List[OperatorNode] = List(this) ++ (this match {
       case ScanOpNode(_, _, _)                             => List()
@@ -18,8 +26,11 @@ object OperatorAST {
       case PrintOpNode(parent, _, _)                       => parent.toList
       case SubqueryNode(parent)                            => parent.toList
       case SubquerySingleResultNode(parent)                => parent.toList
+      case ProjectOpNode(parent, _, _)                     => parent.toList
+      case ViewOpNode(parent, _, name)                     => parent.toList
     })
   }
+
   private var printDepth = 0;
   private def printIdent = " " * (printDepth * 6)
 
@@ -71,6 +82,14 @@ object OperatorAST {
 
   case class UnionAllOpNode(top: OperatorNode, bottom: OperatorNode) extends OperatorNode {
     override def toString = "UnionAllOp" + stringify(top) + stringify(bottom)
+  }
+
+  case class ProjectOpNode(parent: OperatorNode, projNames: Seq[String], origFieldNames: Seq[Expression]) extends OperatorNode {
+    override def toString = "ProjectOp" + stringify(projNames zip origFieldNames, "PROJ NAMES: ") + stringify(parent)
+  }
+
+  case class ViewOpNode(parent: OperatorNode, projNames: Seq[String], name: String) extends OperatorNode {
+    override def toString = "View " + name
   }
 
   // Dummy node to know where a subquery begins and ends

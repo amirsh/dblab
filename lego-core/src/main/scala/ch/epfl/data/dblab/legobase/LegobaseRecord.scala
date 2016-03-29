@@ -19,7 +19,12 @@ case class LegobaseRecord(values: Seq[(String, Any)]) extends Record {
       }
       res
   }
-  def setField(name: String, value: Any) = fieldMap(name) = value
+  def setField(name: String, value: Any) {
+    if (!fieldMap.keySet.contains(name))
+      throw new Exception("Cannot insert new field " + name + " in LegobaseRecord after its creation (existing fields are " + fieldMap.keySet + ")")
+    fieldMap += name -> value
+  }
   def getFieldNames() = fieldMap.keySet
   def getNestedRecords(): Seq[LegobaseRecord] = fieldMap.map({ case (k, v) => v }).filter(_.isInstanceOf[LegobaseRecord]).toSeq.asInstanceOf[Seq[LegobaseRecord]]
+  override def toString = "LegobaseRecord(" + fieldMap.toSeq.toString + ")"
 }
