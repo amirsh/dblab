@@ -29,6 +29,11 @@ class FastScanner(filename: String) {
 
     intDigits = 0
     byteRead = br.read()
+
+    // Skip any characters that are not printable -- TODO: Maybe there is a method in scala for the same thing
+    while (byteRead < 32 && byteRead != delimiter)
+      byteRead = br.read();
+
     if (byteRead == '-') {
       signed = true
       byteRead = br.read()
@@ -39,9 +44,10 @@ class FastScanner(filename: String) {
       byteRead = br.read()
       intDigits = intDigits + 1
     }
-    if ((byteRead != delimiter) && (byteRead != '.') && (byteRead != '\n'))
+    if ((byteRead != delimiter) && (byteRead != '.') && (byteRead != '\n')) {
       throw new RuntimeException("Tried to read Integer, but found neither delimiter nor . after number (found " +
         byteRead.asInstanceOf[Char] + ", previous token = " + intDigits + "/" + number + ")")
+    }
     if (signed) -1 * number else number
   }
 
@@ -62,9 +68,11 @@ class FastScanner(filename: String) {
 
   def next_char() = {
     byteRead = br.read()
-    val del = br.read() //delimiter
-    if ((del != delimiter) && (del != '\n'))
-      throw new RuntimeException("Expected delimiter after char. Not found. Sorry!")
+    if (byteRead != delimiter) {
+      val del = br.read() //delimiter
+      if ((del != delimiter) && (del != '\n'))
+        throw new RuntimeException("Expected delimiter after char. Not found. Sorry!")
+    }
     byteRead.asInstanceOf[Char]
   }
 
@@ -100,13 +108,19 @@ class FastScanner(filename: String) {
   }
 
   def next_date: Int = {
-    delimiter = '-'
-    val year = next_int
-    val month = next_int
-    delimiter = '|'
-    val day = next_int
-    //val date_str = year + "-" + month + "-" + day
-    year * 10000 + month * 100 + day
+    try {
+      delimiter = '-'
+      val year = next_int
+      val month = next_int
+      delimiter = '|'
+      val day = next_int
+      //val date_str = year + "-" + month + "-" + day
+      year * 10000 + month * 100 + day
+    } catch {
+      case e: Exception =>
+        delimiter = '|'
+        0 // Default date to handle null values in data
+    }
   }
 
   def hasNext() = {

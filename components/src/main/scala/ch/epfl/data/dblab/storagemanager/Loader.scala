@@ -50,7 +50,12 @@ object Loader {
   @dontInline
   def fileLineCount(file: String) = {
     import scala.sys.process._;
-    Integer.parseInt(((("wc -l " + file) #| "awk {print($1)}").!!).replaceAll("\\s+$", ""))
+    System.getProperty("os.name") match {
+      case w if w.contains("Windows") =>
+        Integer.parseInt((("find /c /v \"~~~\" " + file).!!).split(":")(1).replaceAll(" ", "").replaceAll("\\s+$", ""))
+      case _ =>
+        Integer.parseInt(((("wc -l " + file) #| "awk {print($1)}").!!).replaceAll("\\s+$", ""))
+    }
   }
 
   // TODO implement the loader method with the following signature.
@@ -73,14 +78,16 @@ object Loader {
     val argNames = table.attributes.map(_.name).toSeq
 
     while (i < size && ldr.hasNext()) {
-      val values = table.attributes.map(arg =>
+      val values = table.attributes.map(arg => {
+        //System.out.println(arg.name)
         arg.dataType match {
           case IntType          => ldr.next_int
           case DoubleType       => ldr.next_double
           case CharType         => ldr.next_char
           case DateType         => ldr.next_date
           case VarCharType(len) => loadString(len, ldr)
-        })
+        }
+      })
       val rec = new DataRow(table.attributes.map(_.name) zip values)
       arr(i) = rec
       i += 1
@@ -117,7 +124,7 @@ object Loader {
 
       var i = 0
       while (i < size && ldr.hasNext()) {
-        val values = arguments.map(arg =>
+        val values = arguments.map(arg => {
           arg._3.dataType match {
             case IntType    => ldr.next_int
             case DoubleType => ldr.next_double
@@ -125,7 +132,8 @@ object Loader {
             case DateType   => ldr.next_date
             case VarCharType(len) => //loadString(len, ldr)
               ldr.next_string
-          })
+          }
+        })
 
         classMirror.reflectConstructor(constr).apply(values: _*) match {
           case rec: R => arr(i) = rec
