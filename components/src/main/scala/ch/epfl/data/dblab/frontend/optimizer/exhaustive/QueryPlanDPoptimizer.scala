@@ -2,6 +2,7 @@ package ch.epfl.data
 package dblab
 package frontend
 package optimizer
+package exhaustive
 
 import schema._
 import parser._
@@ -17,9 +18,9 @@ import scala.collection.mutable.ArrayBuffer
 class QueryPlanDPoptimizer extends QueryPlanOptimizer {
 
   def optimize(qp: QueryPlanTree): QueryPlanTree = {
-  	// Split query tree into SPJ sub-queries whose join order is optimized independently
-  	// Optimize single sub-queries using dynamic programming
-  	// Construct optimized global query plan by combining sub-queries
+    // Split query tree into SPJ sub-queries whose join order is optimized independently
+    // Optimize single sub-queries using dynamic programming
+    // Construct optimized global query plan by combining sub-queries
     qp
   }
 }
