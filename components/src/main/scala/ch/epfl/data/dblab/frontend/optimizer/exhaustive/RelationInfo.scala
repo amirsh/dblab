@@ -5,6 +5,7 @@ package optimizer
 package exhaustive
 
 import scala.collection.mutable.BitSet
+import scala.collection.immutable.List
 
 /**
  * A relation is an intermediate result that can occur during the
@@ -18,4 +19,22 @@ import scala.collection.mutable.BitSet
  *
  * @author Immanuel Trummmer
  */
-case class RelationInfo(val tableIndices: BitSet, val cardinality: Double, val bytesPerRow: Int)
+class RelationInfo(val tableIndices: BitSet, val cardinality: Double, val bytesPerRow: Int) {
+  /**
+   * A list of access paths that are optimal by their combination of execution cost
+   * and output properties (e.g., a path may be kept even if it is more expensive than
+   * other paths for this relation if it generates output tuples in an order that might
+   * speed up future operations).
+   */
+  var optimalPaths = List[Path]()
+  /**
+   * Returns new RelationInfo object representing a join between this relation
+   * and another relation.
+   */
+  def joinWith(otherRel: RelationInfo): RelationInfo = {
+    val resultIndices = tableIndices | otherRel.tableIndices
+    val resultCardinality = cardinality * otherRel.cardinality
+    val resultBytesPerRow = bytesPerRow + otherRel.bytesPerRow
+    new RelationInfo(resultIndices, resultCardinality, resultBytesPerRow)
+  }
+}
