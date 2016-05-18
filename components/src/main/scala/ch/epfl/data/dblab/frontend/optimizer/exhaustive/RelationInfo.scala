@@ -31,9 +31,9 @@ class RelationInfo(val tableIndices: BitSet, val cardinality: Double, val bytesP
    * Returns new RelationInfo object representing a join between this relation
    * and another relation.
    */
-  def joinWith(otherRel: RelationInfo): RelationInfo = {
+  def joinWith(otherRel: RelationInfo, predicates: List[Predicate]): RelationInfo = {
     val resultIndices = tableIndices | otherRel.tableIndices
-    val resultCardinality = cardinality * otherRel.cardinality
+    val resultCardinality = CardinalityModel.joinCardinality(this, otherRel, predicates)
     val resultBytesPerRow = bytesPerRow + otherRel.bytesPerRow
     new RelationInfo(resultIndices, resultCardinality, resultBytesPerRow)
   }

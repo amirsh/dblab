@@ -42,11 +42,12 @@ class QueryPlanDPoptimizer extends QueryPlanOptimizer {
    * new result relations into relation hash map if necessary.
    */
   def tryJoins(leftRelation: RelationInfo, rightRelation: RelationInfo,
-               nrJoined: Int, relationsByNrJoined: Array[HashMap[BitSet, RelationInfo]]) {
+               nrJoined: Int, relationsByNrJoined: Array[HashMap[BitSet, RelationInfo]],
+               predicates: List[Predicate]) {
     // Obtain result relation and generate if not yet created
     val joinResultTables = leftRelation.tableIndices | rightRelation.tableIndices
     if (!relationsByNrJoined(nrJoined).contains(joinResultTables)) {
-      val resultRelation = leftRelation.joinWith(rightRelation)
+      val resultRelation = leftRelation.joinWith(rightRelation, predicates)
       relationsByNrJoined(nrJoined).put(joinResultTables, resultRelation)
     }
     val resultRelation = relationsByNrJoined(nrJoined).getOrElse(joinResultTables, null)
@@ -54,7 +55,7 @@ class QueryPlanDPoptimizer extends QueryPlanOptimizer {
     for (leftPath <- leftRelation.optimalPaths) {
       // Iterate over optimal paths for generating right join operand
       for (rightPath <- rightRelation.optimalPaths) {
-        // TODO: currently, only join method is taken into account
+        // TODO: currently, only one join method is taken into account
         // Generate new path and prune with previously generated paths for same relation
         val resultPath = new JoinPath(resultRelation, leftPath, rightPath)
         // TODO: invocation of cost model
@@ -68,7 +69,8 @@ class QueryPlanDPoptimizer extends QueryPlanOptimizer {
    * order. This function is used as sub-function by the
    * optimizer to optimize SPJ parts of an input query plan.
    */
-  def optimizeJoinOrder(relationsToJoin: List[RelationInfo]): Path = {
+  def optimizeJoinOrder(relationsToJoin: List[RelationInfo],
+                        predicates: List[Predicate]): Path = {
     // We need to join all input relations
     val nrJoinItems = relationsToJoin.size
     // Orders relations by number of joined items - for a fixed number,
@@ -99,14 +101,15 @@ class QueryPlanDPoptimizer extends QueryPlanOptimizer {
             // Join operand pair is only admissible if tables do not overlap
             if (leftTables.intersect(rightTables).isEmpty) {
               // Iterate over all possible join methods and paths and prune
-              tryJoins(leftRelation, rightRelation, nrJoined, relationsByNrJoined)
+              tryJoins(leftRelation, rightRelation, nrJoined, relationsByNrJoined, predicates)
             }
           }
         }
       }
     }
-    // Clean up (take care of cyclic references)
-    relationsToJoin.head.optimalPaths.head
+    // TODO: Clean up (take care of cyclic references)
+    // Return best path for final relation
+    relationsByNrJoined(nrJoinItems).head._2.optimalPaths.head
   }
 
   def optimize(qp: QueryPlanTree): QueryPlanTree = {

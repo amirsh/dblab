@@ -13,7 +13,7 @@ import scala.collection.immutable.List
  *
  * @author Immanuel Trummer
  */
-class CardinalityModel {
+object CardinalityModel {
   /**
    * Returns true iff the predicate can be evaluated on the result of the join between input relations.
    */
