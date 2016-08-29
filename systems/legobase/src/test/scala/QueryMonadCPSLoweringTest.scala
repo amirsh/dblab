@@ -34,7 +34,7 @@ class QueryMonadCPSLoweringTest extends FlatSpec with ShouldMatchers {
     pipeline += DCE
     pipeline += PartiallyEvaluate
 
-    pipeline += new QueryMonadCPSLowering(schema, IR, new QueryMonadLowering(schema, IR, recordLowering.recordLowering))
+    pipeline += new QueryMonadCPSLowering(schema, IR, new QueryMonadLowering(schema, IR, recordLowering.recordLowering, false))
     pipeline += ParameterPromotion
     pipeline += PartiallyEvaluate
     pipeline += DCE
