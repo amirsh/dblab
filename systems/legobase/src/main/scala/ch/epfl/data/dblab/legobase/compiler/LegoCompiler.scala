@@ -85,7 +85,10 @@ class LegoCompiler(val DSL: LegoBaseQueryEngineExp,
       pipeline += new QueryMonadOptimization(settings.queryMonadHoisting)
     }
     pipeline += DCE
-    val queryMonadLowering = new QueryMonadLowering(schema, DSL, recordLowering.recordLowering)
+    val isUsingPipelining = settings.queryMonadCPS || settings.queryMonadStream || settings.queryMonadIterator
+    val queryMonadLowering =
+      new QueryMonadLowering(schema, DSL, recordLowering.recordLowering,
+        !(!isUsingPipelining && settings.mallocHoisting && !settings.queryMonadHoisting))
     pipeline += new QueryMonadNoHorizontalVerifyer(DSL)
     if (settings.queryMonadCPS) {
       pipeline += new QueryMonadCPSLowering(schema, DSL, queryMonadLowering)

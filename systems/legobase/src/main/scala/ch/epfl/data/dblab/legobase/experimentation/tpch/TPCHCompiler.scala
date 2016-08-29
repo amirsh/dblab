@@ -69,6 +69,8 @@ object TPCHCompiler extends TPCHRunner {
         System.out.println("    Warms up the underlying just-in-time (JIT) compiler")
         System.out.println("  all-tpch <data_folder> <scaling_factor_number>")
         System.out.println("    Generates the most optimized C code of all TPCH queries")
+        System.out.println("  all-tpch-levels <#_DSL_levels> <data_folder> <scaling_factor_number>")
+        System.out.println("    Generates the most optimized C code of all TPCH queries using the given number of DSLs")
         System.out.println("  compile <data_folder> <scaling_factor_number> <queries> <options>")
         System.out.println("    Compiles the given query using the given arguments")
         System.out.println("  exit")
@@ -79,12 +81,15 @@ object TPCHCompiler extends TPCHRunner {
         System.out.print(CMD_PREFIX)
         while (!exit && sc.hasNext) {
           val str = sc.nextLine
-          def compileOptimizedQuery(folder: String, sf: String, query: String): Unit = {
+          def compileQuery(folder: String, sf: String, query: String, flags: List[String]): Unit = {
             utils.Utilities.time({
               turnOffConsoleOutput {
-                parseArgs(Array(folder, sf, query, "-optimal"))
+                parseArgs((folder :: sf :: query :: flags).toArray)
               }
             }, s"Compilation of $query")
+          }
+          def compileOptimizedQuery(folder: String, sf: String, query: String): Unit = {
+            compileQuery(folder, sf, query, List("-optimal"))
           }
           def turnOffConsoleOutput[T](e: => T): T = {
             import java.io.PrintStream
@@ -112,6 +117,13 @@ object TPCHCompiler extends TPCHRunner {
               compileOptimizedQuery(folder, sf, "Q1_functional")
               for (q <- 2 to 22) {
                 compileOptimizedQuery(folder, sf, s"Q$q")
+              }
+            case _ if str.startsWith("all-tpch-levels ") =>
+              val Array(_, l, folder, sf) = str.split(" ")
+              val flags = List("-optimal", s"-levels=$l")
+              compileQuery(folder, sf, "Q1_functional", flags)
+              for (q <- 2 to 22) {
+                compileQuery(folder, sf, s"Q$q", flags)
               }
             case _ if str.startsWith("compile ") => parseArgs(str.split(" ").tail)
             case _                               => System.out.println(s"Command $str not available!")

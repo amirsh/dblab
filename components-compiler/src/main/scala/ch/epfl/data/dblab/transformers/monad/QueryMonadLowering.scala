@@ -18,7 +18,10 @@ import quasi._
 /**
  * Lowers query monad operations.
  */
-class QueryMonadLowering(val schema: Schema, override val IR: QueryEngineExp, val recordUsageAnalysis: RecordUsageAnalysis[QueryEngineExp]) extends RuleBasedTransformer[QueryEngineExp](IR) with StructProcessing[QueryEngineExp] {
+class QueryMonadLowering(val schema: Schema,
+                         override val IR: QueryEngineExp,
+                         val recordUsageAnalysis: RecordUsageAnalysis[QueryEngineExp],
+                         val accuratePartitions: Boolean) extends RuleBasedTransformer[QueryEngineExp](IR) with StructProcessing[QueryEngineExp] {
   import IR._
 
   val SUPPORT_ONLY_1_TO_N = true
@@ -229,7 +232,11 @@ class QueryMonadLowering(val schema: Schema, override val IR: QueryEngineExp, va
     __assign(index, unit(0))
     Range(unit(0), MAX_SIZE).foreach {
       __lambda { i =>
-        val arraySize = eachBucketSize(i)
+        val arraySize =
+          if (!accuratePartitions)
+            originalArray.length * unit(2) / MAX_SIZE
+          else
+            eachBucketSize(i)
         array(i) = __newArray[V](arraySize)
         eachBucketSize(i) = unit(0)
       }

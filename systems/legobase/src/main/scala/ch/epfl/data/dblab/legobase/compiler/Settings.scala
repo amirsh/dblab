@@ -34,14 +34,18 @@ class Settings(val args: List[String]) {
     if (chooseOptimal || chooseCompliant) {
       if (optimalArgsHandler == null)
         throw new Exception(s"${OptimalSetting.flagName} cannot be used for it, because there is no optimal handler defined for it.")
-      val propName =
-        if (chooseCompliant)
-          "experimentation/config/compliant.properties"
+      val propName = {
+        val folder = "experimentation/config"
+        val propFileName = if (chooseCompliant)
+          "compliant"
         else
-          "experimentation/config/optimal.properties"
+          getOptimizationLevelOption.map(l => s"opt$l").getOrElse("optimal")
+        // "optimal"
+        s"$folder/$propFileName.properties"
+      }
       val newArgs = optimalArgsHandler(propName)
       // TODO rewrite using OptimizationLevelSetting
-      val LEVELS_PREFIX = "-levels="
+      import Settings.LEVELS_PREFIX
       val levels = args.find(a => a.startsWith(LEVELS_PREFIX)).map(_.substring(LEVELS_PREFIX.length).toInt).getOrElse(4)
       def available(setting: OptimizationSetting): Boolean = {
         val langLevel = setting.language match {
@@ -113,8 +117,9 @@ class Settings(val args: List[String]) {
   def queryMonadHoisting: Boolean = hasSetting(QueryMonadHoistingSetting)
   def forceCompliant: Boolean = hasSetting(ForceCompliantSetting)
 
-  def hasOptimizationLevel: Boolean = hasSetting(OptimizationLevelSetting)
-  def getOptimizationLevel: Int = args.find(a => OptimizationLevelSetting.matches(a)).get.substring("-levels=".size).toInt
+  def getOptimizationLevelOption: Option[Int] = args.find(a => OptimizationLevelSetting.matches(a)).map(_.substring(Settings.LEVELS_PREFIX.size).toInt)
+  def hasOptimizationLevel: Boolean = getOptimizationLevelOption.nonEmpty
+  def getOptimizationLevel: Int = getOptimizationLevelOption.get
 
   def queryName: String = args(2)
 
@@ -126,6 +131,7 @@ class Settings(val args: List[String]) {
  * Contains list of available settings
  */
 object Settings {
+  val LEVELS_PREFIX = "-levels="
   val ALL_SETTINGS = List(HashMapToSetSetting,
     SetToArraySetting,
     SetToLinkedListSetting,
@@ -356,6 +362,6 @@ case object ScalaCGSetting extends OptionSetting("scala",
   "Generates Scala code instead of C code")
 case object OptimizationLevelSetting extends OptionSetting("levels",
   "The level of optimization") {
-  override def matches(arg: String): Boolean = arg.startsWith("-levels=")
+  override def matches(arg: String): Boolean = arg.startsWith(Settings.LEVELS_PREFIX)
 }
 
