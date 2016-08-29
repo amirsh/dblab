@@ -60,81 +60,101 @@ object TPCHCompiler extends TPCHRunner {
     }
   }
 
+  object InteractiveRunner {
+    def compileQuery(folder: String, sf: String, query: String, flags: List[String]): Unit = {
+      utils.Utilities.time({
+        turnOffConsoleOutput {
+          parseArgs((folder :: sf :: query :: flags).toArray)
+        }
+      }, s"Compilation of $query")
+    }
+
+    def compileOptimizedQuery(folder: String, sf: String, query: String): Unit = {
+      compileQuery(folder, sf, query, List("-optimal"))
+    }
+
+    def turnOffConsoleOutput[T](e: => T): T = {
+      import java.io.PrintStream
+      val outOriginal = new PrintStream(System.out);
+      val errOriginal = new PrintStream(System.err);
+      System.setOut(new PrintStream("compilation-out.out.txt"))
+      System.setErr(new PrintStream("compilation-err.out.txt"))
+      val res = e
+      System.setOut(outOriginal)
+      System.setErr(errOriginal)
+      res
+    }
+
+    def warmUp(): Unit = {
+      for (i <- 1 to 25) {
+        System.out.println(s"Warming up ($i)")
+        compileOptimizedQuery("dummy", "1", "Q16")
+        compileOptimizedQuery("dummy", "1", "Q2_functional")
+      }
+      // To reset book-keepings in SC
+      ExpressionSymbol.globalId = 0
+    }
+
+    val EXIT_CMD = "exit"
+    val WARMUP_CMD = "warm-up"
+    val ALL_TPCH_CMD = "all-tpch"
+    val ALL_TPCH_CONF_CMD = "all-tpch-conf"
+    val COMPILE_CMD = "compile"
+
+    def runCommand(cmd: String, exitCont: () => Unit): Unit = {
+      cmd match {
+        case EXIT_CMD => exitCont()
+        case WARMUP_CMD =>
+          warmUp()
+        case _ if cmd.startsWith(s"$ALL_TPCH_CMD ") =>
+          val Array(_, folder, sf) = cmd.split(" ")
+          compileOptimizedQuery(folder, sf, "Q1_functional")
+          for (q <- 2 to 22) {
+            compileOptimizedQuery(folder, sf, s"Q$q")
+          }
+        case _ if cmd.startsWith(s"$ALL_TPCH_CONF_CMD ") =>
+          val Array(_, l, folder, sf) = cmd.split(" ")
+          val lastFlag = l match {
+            case "c"             => "-compliant"
+            case "1" | "2" | "3" => s"-levels=$l"
+            case "m"             => "-malloc-profile"
+            case _               => throw new Exception(s"Wrong flag `$l` for all-tpch-conf")
+          }
+          val flags = List("-optimal", lastFlag)
+          compileQuery(folder, sf, "Q1_functional", flags)
+          for (q <- 2 to 22) {
+            compileQuery(folder, sf, s"Q$q", flags)
+          }
+        case _ if cmd.startsWith(s"$COMPILE_CMD ") => parseArgs(cmd.split(" ").tail)
+        case _                                     => System.out.println(s"Command $cmd not available!")
+      }
+    }
+  }
+
   def main(args: Array[String]) {
     args.toList match {
       case List("interactive") =>
+        import InteractiveRunner._
         System.out.println("*** Interactive Mode ***")
         System.out.println("Available commands:")
-        System.out.println("  warm-up")
+        System.out.println(s"  $WARMUP_CMD")
         System.out.println("    Warms up the underlying just-in-time (JIT) compiler")
-        System.out.println("  all-tpch <data_folder> <scaling_factor_number>")
+        System.out.println(s"  $ALL_TPCH_CMD <data_folder> <scaling_factor_number>")
         System.out.println("    Generates the most optimized C code of all TPCH queries")
-        System.out.println("  all-tpch-conf <#_DSL_levels|c|m> <data_folder> <scaling_factor_number>")
+        System.out.println(s"  $ALL_TPCH_CONF_CMD <#_DSL_levels|c|m> <data_folder> <scaling_factor_number>")
         System.out.println("    Generates the most optimized C code of all TPCH queries" +
           " using the given number of DSLs or in the compliant mode")
-        System.out.println("  compile <data_folder> <scaling_factor_number> <queries> <options>")
+        System.out.println(s"  $COMPILE_CMD <data_folder> <scaling_factor_number> <queries> <options>")
         System.out.println("    Compiles the given query using the given arguments")
-        System.out.println("  exit")
+        System.out.println(s"  $EXIT_CMD")
         System.out.println("    Exits the interactive mode")
         val sc = new java.util.Scanner(System.in)
         var exit = false
         val CMD_PREFIX = ">> "
         System.out.print(CMD_PREFIX)
         while (!exit && sc.hasNext) {
-          val str = sc.nextLine
-          def compileQuery(folder: String, sf: String, query: String, flags: List[String]): Unit = {
-            utils.Utilities.time({
-              turnOffConsoleOutput {
-                parseArgs((folder :: sf :: query :: flags).toArray)
-              }
-            }, s"Compilation of $query")
-          }
-          def compileOptimizedQuery(folder: String, sf: String, query: String): Unit = {
-            compileQuery(folder, sf, query, List("-optimal"))
-          }
-          def turnOffConsoleOutput[T](e: => T): T = {
-            import java.io.PrintStream
-            val outOriginal = new PrintStream(System.out);
-            val errOriginal = new PrintStream(System.err);
-            System.setOut(new PrintStream("compilation-out.out.txt"))
-            System.setErr(new PrintStream("compilation-err.out.txt"))
-            val res = e
-            System.setOut(outOriginal)
-            System.setErr(errOriginal)
-            res
-          }
-          str match {
-            case "exit" => exit = true
-            case "warm-up" =>
-              for (i <- 1 to 25) {
-                System.out.println(s"Warming up ($i)")
-                compileOptimizedQuery("dummy", "1", "Q16")
-                compileOptimizedQuery("dummy", "1", "Q2_functional")
-              }
-              // To reset book-keepings in SC
-              ExpressionSymbol.globalId = 0
-            case _ if str.startsWith("all-tpch ") =>
-              val Array(_, folder, sf) = str.split(" ")
-              compileOptimizedQuery(folder, sf, "Q1_functional")
-              for (q <- 2 to 22) {
-                compileOptimizedQuery(folder, sf, s"Q$q")
-              }
-            case _ if str.startsWith("all-tpch-conf ") =>
-              val Array(_, l, folder, sf) = str.split(" ")
-              val lastFlag = l match {
-                case "c"             => "-compliant"
-                case "1" | "2" | "3" => s"-levels=$l"
-                case "m"             => "-malloc-profile"
-                case _               => throw new Exception(s"Wrong flag `$l` for all-tpch-conf")
-              }
-              val flags = List("-optimal", lastFlag)
-              compileQuery(folder, sf, "Q1_functional", flags)
-              for (q <- 2 to 22) {
-                compileQuery(folder, sf, s"Q$q", flags)
-              }
-            case _ if str.startsWith("compile ") => parseArgs(str.split(" ").tail)
-            case _                               => System.out.println(s"Command $str not available!")
-          }
+          val cmd = sc.nextLine
+          runCommand(cmd, () => exit = true)
           if (!exit) {
             System.out.print(CMD_PREFIX)
           }
