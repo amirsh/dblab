@@ -159,6 +159,10 @@ object TPCHCompiler extends TPCHRunner {
             System.out.print(CMD_PREFIX)
           }
         }
+      case List("run-cmd", cmds) =>
+        for (cmd <- cmds.split(";")) {
+          InteractiveRunner.runCommand(cmd.trim(), () => ())
+        }
       case _ => parseArgs(args)
     }
   }
