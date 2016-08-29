@@ -69,8 +69,9 @@ object TPCHCompiler extends TPCHRunner {
         System.out.println("    Warms up the underlying just-in-time (JIT) compiler")
         System.out.println("  all-tpch <data_folder> <scaling_factor_number>")
         System.out.println("    Generates the most optimized C code of all TPCH queries")
-        System.out.println("  all-tpch-levels <#_DSL_levels> <data_folder> <scaling_factor_number>")
-        System.out.println("    Generates the most optimized C code of all TPCH queries using the given number of DSLs")
+        System.out.println("  all-tpch-conf <#_DSL_levels|c|m> <data_folder> <scaling_factor_number>")
+        System.out.println("    Generates the most optimized C code of all TPCH queries" +
+          " using the given number of DSLs or in the compliant mode")
         System.out.println("  compile <data_folder> <scaling_factor_number> <queries> <options>")
         System.out.println("    Compiles the given query using the given arguments")
         System.out.println("  exit")
@@ -118,9 +119,15 @@ object TPCHCompiler extends TPCHRunner {
               for (q <- 2 to 22) {
                 compileOptimizedQuery(folder, sf, s"Q$q")
               }
-            case _ if str.startsWith("all-tpch-levels ") =>
+            case _ if str.startsWith("all-tpch-conf ") =>
               val Array(_, l, folder, sf) = str.split(" ")
-              val flags = List("-optimal", s"-levels=$l")
+              val lastFlag = l match {
+                case "c"             => "-compliant"
+                case "1" | "2" | "3" => s"-levels=$l"
+                case "m"             => "-malloc-profile"
+                case _               => throw new Exception(s"Wrong flag `$l` for all-tpch-conf")
+              }
+              val flags = List("-optimal", lastFlag)
               compileQuery(folder, sf, "Q1_functional", flags)
               for (q <- 2 to 22) {
                 compileQuery(folder, sf, s"Q$q", flags)
