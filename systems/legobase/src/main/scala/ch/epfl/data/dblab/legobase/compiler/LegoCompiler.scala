@@ -114,6 +114,8 @@ class LegoCompiler(val DSL: LegoBaseQueryEngineExp,
     // pipeline += PartiallyEvaluate
   }
 
+  pipeline += new ProvInjector(DSL)
+
   pipeline += HashMapHoist
 
   if (!settings.noSingletonHashMap)
