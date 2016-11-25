@@ -12,6 +12,7 @@ import sc.pardis.types._
 import sc.pardis.types.PardisTypeImplicits._
 import sc.pardis.quasi.anf._
 import quasi._
+import dblab.queryengine.GenericEngine.prov_log
 
 class ProvInjector(override val IR: QueryEngineExp)
   extends RuleBasedTransformer[QueryEngineExp](IR) {
@@ -26,11 +27,11 @@ class ProvInjector(override val IR: QueryEngineExp)
                ): Unit""" =>
       dsl"""(
                 if($cond) {
-                  printf("cf -- true")
+                  prov_log("cf_if", true)
                   ${inlineBlock[Unit](thenp)}
                 }
                 else {
-                  printf("cf -- false")
+                  prov_log("cf_if", false)
                   ${inlineBlock[Unit](elsep)}
                 }
                )"""
@@ -40,10 +41,10 @@ class ProvInjector(override val IR: QueryEngineExp)
   rewrite += rule {
     case dsl"while($cond) $body" =>
       dsl"""while(${inlineBlock(cond)}) {
-        printf("cf(while) -- true")
+        prov_log("cf_while", true)
         ${inlineBlock(body)}
       }
-      printf("cf(while) -- false")
+      prov_log("cf_while", false)
       """
   }
 }

@@ -27,6 +27,7 @@ trait GenericEngineOps extends Base with OptimalStringOps {
     def dateToYear(long: Rep[Int]): Rep[Int] = genericEngineDateToYearObject(long)
     def parseDate(x: Rep[String]): Rep[Int] = genericEngineParseDateObject(x)
     def parseString(x: Rep[String]): Rep[OptimalString] = genericEngineParseStringObject(x)
+    def prov_log[T](str: Rep[String], x: Rep[T])(implicit typeT: TypeRep[T]): Rep[Unit] = genericEngineProv_logObject[T](str, x)(typeT)
   }
   // constructors
 
@@ -41,6 +42,8 @@ trait GenericEngineOps extends Base with OptimalStringOps {
   type GenericEngineParseDateObject = GenericEngineIRs.GenericEngineParseDateObject
   val GenericEngineParseStringObject = GenericEngineIRs.GenericEngineParseStringObject
   type GenericEngineParseStringObject = GenericEngineIRs.GenericEngineParseStringObject
+  val GenericEngineProv_logObject = GenericEngineIRs.GenericEngineProv_logObject
+  type GenericEngineProv_logObject[T] = GenericEngineIRs.GenericEngineProv_logObject[T]
   // method definitions
   def genericEngineRunQueryObject[T](query: => Rep[T])(implicit typeT: TypeRep[T]): Rep[T] = {
     val queryOutput = reifyBlock(query)
@@ -50,6 +53,7 @@ trait GenericEngineOps extends Base with OptimalStringOps {
   def genericEngineDateToYearObject(long: Rep[Int]): Rep[Int] = GenericEngineDateToYearObject(long)
   def genericEngineParseDateObject(x: Rep[String]): Rep[Int] = GenericEngineParseDateObject(x)
   def genericEngineParseStringObject(x: Rep[String]): Rep[OptimalString] = GenericEngineParseStringObject(x)
+  def genericEngineProv_logObject[T](str: Rep[String], x: Rep[T])(implicit typeT: TypeRep[T]): Rep[Unit] = GenericEngineProv_logObject[T](str, x)
   type GenericEngine = ch.epfl.data.dblab.queryengine.GenericEngine
 }
 object GenericEngineIRs extends Base {
@@ -80,6 +84,10 @@ object GenericEngineIRs extends Base {
 
   case class GenericEngineParseStringObject(x: Rep[String]) extends FunctionDef[OptimalString](None, "GenericEngine.parseString", List(List(x))) {
     override def curriedConstructor = (copy _)
+  }
+
+  case class GenericEngineProv_logObject[T](str: Rep[String], x: Rep[T])(implicit val typeT: TypeRep[T]) extends FunctionDef[Unit](None, "GenericEngine.prov_log", List(List(str, x))) {
+    override def curriedConstructor = (copy[T] _).curried
   }
 
   type GenericEngine = ch.epfl.data.dblab.queryengine.GenericEngine
@@ -128,6 +136,12 @@ object GenericEngineQuasiNodes extends BaseExtIR {
       r
     }
   }
+  case class GenericEngineProv_logObjectExt[T](str: Rep[String], x: Rep[T])(implicit val paramT: MaybeParamTag[T]) extends FunctionDef[GenericEngineProv_logObject[T], Unit] {
+    override def nodeUnapply(t: GenericEngineProv_logObject[T]): Option[Product] = (GenericEngineProv_logObject.unapply(t): Option[Product]) map { r =>
+      paramT.define(t.typeT)
+      r
+    }
+  }
   type GenericEngine = ch.epfl.data.dblab.queryengine.GenericEngine
 }
 
@@ -144,6 +158,7 @@ trait GenericEngineExtOps extends BaseExt with OptimalStringExtOps {
     def dateToYear(long: Rep[Int]): Rep[Int] = genericEngineDateToYearObject(long)
     def parseDate(x: Rep[String]): Rep[Int] = genericEngineParseDateObject(x)
     def parseString(x: Rep[String]): Rep[OptimalString] = genericEngineParseStringObject(x)
+    def prov_log[T](str: Rep[String], x: Rep[T])(implicit paramT: MaybeParamTag[T]): Rep[Unit] = genericEngineProv_logObject[T](str, x)(paramT)
   }
   // constructors
 
@@ -156,6 +171,7 @@ trait GenericEngineExtOps extends BaseExt with OptimalStringExtOps {
   def genericEngineDateToYearObject(long: Rep[Int]): Rep[Int] = GenericEngineDateToYearObjectExt(long)
   def genericEngineParseDateObject(x: Rep[String]): Rep[Int] = GenericEngineParseDateObjectExt(x)
   def genericEngineParseStringObject(x: Rep[String]): Rep[OptimalString] = GenericEngineParseStringObjectExt(x)
+  def genericEngineProv_logObject[T](str: Rep[String], x: Rep[T])(implicit paramT: MaybeParamTag[T]): Rep[Unit] = GenericEngineProv_logObjectExt[T](str, x)
   type GenericEngine = ch.epfl.data.dblab.queryengine.GenericEngine
 }
 

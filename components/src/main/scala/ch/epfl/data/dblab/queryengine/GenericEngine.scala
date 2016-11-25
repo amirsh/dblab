@@ -42,4 +42,5 @@ object GenericEngine {
     (year * 10000) + ((month + 1) * 100) + day
   }
   def parseString(x: String): OptimalString = OptimalString(x.getBytes)
+  def prov_log[T](str: String, x: T): Unit = println("$str -- $x")
 }

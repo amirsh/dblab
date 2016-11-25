@@ -155,6 +155,7 @@ int event[NUM_EVENTS] = {PAPI_L1_DCM, PAPI_L2_DCM, PAPI_L2_DCA,
     }
 
   import sc.cscala.deep.GArrayHeaderIRs.GArrayHeaderG_array_indexObject
+  import deep.queryengine.GenericEngineIRs.GenericEngineProv_logObject
 
   val BN = "\\n"
 
@@ -175,6 +176,8 @@ int event[NUM_EVENTS] = {PAPI_L1_DCM, PAPI_L2_DCM, PAPI_L2_DCA,
   override def functionNodeToDocument(fun: FunctionNode[_]) = fun match {
     case GArrayHeaderG_array_indexObject(array, i) =>
       doc"g_array_index($array, ${fun.tp}, $i)"
+    case GenericEngineProv_logObject(Constant(str), obj) =>
+      doc"log_${str}($obj)"
     case PAPIStart() =>
       doc"""
 /* Start counting events */
