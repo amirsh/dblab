@@ -36,6 +36,13 @@ TPCH queries, it requires installing sbt and JVM 1.8.
 D3) Scripts and how-tos for all experiments executed for the paper
 ./runExperiments.sh
 
+Here is the mapping between the experiment results reported in the SIGMOD'16 paper, and the ones here:
+DBLAB/LB2 -> l1
+DBLAB/LB3 -> l2
+DBLAB/LB4 -> l3
+DBLAB/LB5 -> opt
+TPC-H Compliant -> compliant
+
 E) Operating System Info
 Red Hat Enterprise 6.7
 
