@@ -1,3 +1,4 @@
+Owner of artifact grants ACM permission to serve the artifact to users of the ACM Digital Library.
 ================================================================================
 Readme for reproducibility submission of paper ID 977
 
