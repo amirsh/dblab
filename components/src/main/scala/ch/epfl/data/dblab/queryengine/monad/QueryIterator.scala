@@ -45,6 +45,17 @@ abstract class QueryIterator[T] { self =>
       findFirst(p, next)
     }
   }
+  def take(n: Int): QueryIterator[T] = destroy { next =>
+    var count = 0
+    iterate { () =>
+      if (count < n) {
+        count += 1
+        next()
+      } else {
+        NULL
+      }
+    }
+  }
   def foreach(f: T => Unit): Unit = destroy { next =>
     var elem: T = NULL
     while ({
