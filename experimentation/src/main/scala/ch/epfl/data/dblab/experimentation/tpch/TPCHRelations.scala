@@ -4,11 +4,12 @@ package experimentation
 package tpch
 
 import config._
-import sc.pardis.annotations.{ deep, needs }
+// import sc.pardis.annotations.{ deep, needs }
 import utils.Utilities._
 import sc.pardis.shallow.{ CaseClassRecord, OptimalString }
 
-@needs[OptimalString] @deep case class LINEITEMRecord(
+// @needs[OptimalString] @deep 
+case class LINEITEMRecord(
   val L_ORDERKEY: Int,
   val L_PARTKEY: Int,
   val L_SUPPKEY: Int,
@@ -26,7 +27,8 @@ import sc.pardis.shallow.{ CaseClassRecord, OptimalString }
   val L_SHIPMODE: OptimalString,
   val L_COMMENT: OptimalString) extends CaseClassRecord
 
-@needs[OptimalString] @deep case class ORDERSRecord(
+// @needs[OptimalString] @deep 
+case class ORDERSRecord(
   val O_ORDERKEY: Int,
   val O_CUSTKEY: Int,
   val O_ORDERSTATUS: Char,
@@ -37,7 +39,8 @@ import sc.pardis.shallow.{ CaseClassRecord, OptimalString }
   val O_SHIPPRIORITY: Int,
   val O_COMMENT: OptimalString) extends CaseClassRecord
 
-@needs[OptimalString] @deep case class CUSTOMERRecord(
+// @needs[OptimalString] @deep 
+case class CUSTOMERRecord(
   val C_CUSTKEY: Int,
   val C_NAME: OptimalString,
   val C_ADDRESS: OptimalString,
@@ -47,7 +50,8 @@ import sc.pardis.shallow.{ CaseClassRecord, OptimalString }
   val C_MKTSEGMENT: OptimalString,
   val C_COMMENT: OptimalString) extends CaseClassRecord
 
-@needs[OptimalString] @deep case class SUPPLIERRecord(
+// @needs[OptimalString] @deep 
+case class SUPPLIERRecord(
   val S_SUPPKEY: Int,
   val S_NAME: OptimalString,
   val S_ADDRESS: OptimalString,
@@ -56,25 +60,29 @@ import sc.pardis.shallow.{ CaseClassRecord, OptimalString }
   val S_ACCTBAL: Double,
   val S_COMMENT: OptimalString) extends CaseClassRecord
 
-@needs[OptimalString] @deep case class PARTSUPPRecord(
+// @needs[OptimalString] @deep 
+case class PARTSUPPRecord(
   val PS_PARTKEY: Int,
   val PS_SUPPKEY: Int,
   val PS_AVAILQTY: Int,
   val PS_SUPPLYCOST: Double,
   val PS_COMMENT: OptimalString) extends CaseClassRecord
 
-@needs[OptimalString] @deep case class REGIONRecord(
+// @needs[OptimalString] @deep 
+case class REGIONRecord(
   val R_REGIONKEY: Int,
   val R_NAME: OptimalString,
   val R_COMMENT: OptimalString) extends CaseClassRecord
 
-@needs[OptimalString] @deep case class NATIONRecord(
+// @needs[OptimalString] @deep 
+case class NATIONRecord(
   val N_NATIONKEY: Int,
   val N_NAME: OptimalString,
   val N_REGIONKEY: Int,
   val N_COMMENT: OptimalString) extends CaseClassRecord
 
-@needs[OptimalString] @deep case class PARTRecord(
+// @needs[OptimalString] @deep 
+case class PARTRecord(
   val P_PARTKEY: Int,
   val P_NAME: OptimalString,
   val P_MFGR: OptimalString,

@@ -4,42 +4,42 @@ package experimentation
 package tpch
 
 import utils.Utilities._
-import sc.pardis.annotations.{ deep, metadeep, dontLift, dontInline, needs, ::, onlineInliner, noDeepExt }
+// import sc.pardis.annotations.{ deep, metadeep, dontLift, dontInline, needs, ::, onlineInliner, noDeepExt }
 import queryengine._
 import config._
 import schema._
 import storagemanager._
 import sc.pardis.shallow.OptimalString
 import sc.pardis.types._
-import scala.reflect._
-import scala.reflect.runtime.universe._
-import scala.reflect.runtime.currentMirror
+// import scala.reflect._
+// import scala.reflect.runtime.universe._
+// import scala.reflect.runtime.currentMirror
 
-@metadeep(
-  folder = "",
-  header = """import ch.epfl.data.dblab.deep._
-import ch.epfl.data.dblab.deep.queryengine._
-import ch.epfl.data.dblab.deep.storagemanager._
-import ch.epfl.data.dblab.deep.schema._
-import scala.reflect._""",
-  component = "",
-  thisComponent = "")
-@needs[FastScanner :: Array[_] :: REGIONRecord :: PARTSUPPRecord :: PARTRecord :: NATIONRecord :: SUPPLIERRecord :: LINEITEMRecord :: ORDERSRecord :: CUSTOMERRecord :: OptimalString :: Loader :: Table]
-@deep
-@onlineInliner
-@noDeepExt
-trait TPCHLoader
+// @metadeep(
+//   folder = "",
+//   header = """import ch.epfl.data.dblab.deep._
+// import ch.epfl.data.dblab.deep.queryengine._
+// import ch.epfl.data.dblab.deep.storagemanager._
+// import ch.epfl.data.dblab.deep.schema._
+// import scala.reflect._""",
+//   component = "",
+//   thisComponent = "")
+// @needs[FastScanner :: Array[_] :: REGIONRecord :: PARTSUPPRecord :: PARTRecord :: NATIONRecord :: SUPPLIERRecord :: LINEITEMRecord :: ORDERSRecord :: CUSTOMERRecord :: OptimalString :: Loader :: Table]
+// @deep
+// @onlineInliner
+// @noDeepExt
+// trait TPCHLoader
 
 /**
  * A module that defines loaders for TPCH relations.
  */
 object TPCHLoader {
 
-  @dontLift
+  // @dontLift
   def tpchSchema: Schema = TPCHSchema.getSchema(Config.datapath, getScalingFactor)
-  @dontInline
+  // @dontInline
   def getTable(tableName: String): Table = tpchSchema.tables.find(t => t.name == tableName).get
-  @dontLift
+  // @dontLift
   def getScalingFactor: Double = Config.datapath.slice(Config.datapath.lastIndexOfSlice("sf") + 2, Config.datapath.length - 1).toDouble //TODO Pass SF to Config
 
   import Loader.loadTable

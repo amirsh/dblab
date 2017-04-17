@@ -178,6 +178,10 @@ class AggOpGeneric[A, B](parent: Operator[A], numAggs: Int)(val grp: Function1[A
   }
   def close() = {}
   def reset { parent.reset }
+  def run(): Unit = {
+    open()
+    next()
+  }
 }
 
 /*@deep*/ class PrintOp[A](var parent: Operator[A])(printFunc: A => Unit, limit: Int) extends Operator[A] {
