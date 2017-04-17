@@ -1,76 +1,76 @@
-package ch.epfl.data
-package dblab
-package queryengine
-package stream
+// package ch.epfl.data
+// package dblab
+// package queryengine
+// package stream
 
-import scala.reflect.runtime.universe._
-import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.HashMap
-import scala.collection.mutable.Set
-import scala.collection.mutable.TreeSet
-import GenericEngine._
-import sc.pardis.annotations.{ deep, metadeep }
-import sc.pardis.shallow.{ Record, DynamicCompositeRecord }
-import monad.{ Done, Skip, Yield, BuildStream, Stream }
+// import scala.reflect.runtime.universe._
+// import scala.collection.mutable.ArrayBuffer
+// import scala.collection.mutable.HashMap
+// import scala.collection.mutable.Set
+// import scala.collection.mutable.TreeSet
+// import GenericEngine._
+// import sc.pardis.annotations.{ deep, metadeep }
+// import sc.pardis.shallow.{ Record, DynamicCompositeRecord }
+// import monad.{ Done, Skip, Yield, BuildStream, Stream }
 
-/*@deep*/ abstract class Operator[+A] {
-  def open()
-  def next(): Stream[A]
-  def close()
-  def reset()
-  def foreach(f: A => Unit) = {
-    var exit = false
-    while (exit != true) {
-      next().semiFold(() => exit = true, () => (), t => f(t))
-    }
-  }
-}
+// /*@deep*/ abstract class Operator[+A] {
+//   def open()
+//   def next(): Stream[A]
+//   def close()
+//   def reset()
+//   def foreach(f: A => Unit) = {
+//     var exit = false
+//     while (exit != true) {
+//       next().semiFold(() => exit = true, () => (), t => f(t))
+//     }
+//   }
+// }
 
-/*@deep*/ class ScanOp[A](val table: Array[A]) extends Operator[A] {
-  var i = 0
-  def open() {}
-  def next() = {
-    if (i < table.length) {
-      val v = table(i)
-      i += 1
-      Yield(v)
-    } else Done
-  }
-  def close() = {}
-  def reset() { i = 0 }
-}
+// /*@deep*/ class ScanOp[A](val table: Array[A]) extends Operator[A] {
+//   var i = 0
+//   def open() {}
+//   def next() = {
+//     if (i < table.length) {
+//       val v = table(i)
+//       i += 1
+//       Yield(v)
+//     } else Done
+//   }
+//   def close() = {}
+//   def reset() { i = 0 }
+// }
 
-/*@deep*/ class SelectOp[A](parent: Operator[A])(selectPred: A => Boolean) extends Operator[A] {
-  def open() = { parent.open }
-  def next() = parent.next().filter(selectPred)
-  def close() = {}
-  def reset() { parent.reset }
-}
+// /*@deep*/ class SelectOp[A](parent: Operator[A])(selectPred: A => Boolean) extends Operator[A] {
+//   def open() = { parent.open }
+//   def next() = parent.next().filter(selectPred)
+//   def close() = {}
+//   def reset() { parent.reset }
+// }
 
-/*@deep*/ class AggOp[A, B](parent: Operator[A], val numAggs: Int)(val grp: A => B)(val aggFuncs: Function2[A, Double, Double]*) extends Operator[AGGRecord[B]] {
-  // val hm = new HashMap[B, Array[Double]]()
-  // var keySet = Set(hm.keySet.toSeq: _*)
-  val hm = HashMap[B, AGGRecord[B]]()
+// /*@deep*/ class AggOp[A, B](parent: Operator[A], val numAggs: Int)(val grp: A => B)(val aggFuncs: Function2[A, Double, Double]*) extends Operator[AGGRecord[B]] {
+//   // val hm = new HashMap[B, Array[Double]]()
+//   // var keySet = Set(hm.keySet.toSeq: _*)
+//   val hm = HashMap[B, AGGRecord[B]]()
 
-  def open() {
-    parent.open
-    parent.foreach { t: A =>
-      val key = grp(t)
-      val elem = hm.getOrElseUpdate(key, new AGGRecord(key, new Array[Double](numAggs)))
-      val aggs = elem.aggs
-      var i: scala.Int = 0
-      aggFuncs.foreach { aggFun =>
-        aggs(i) = aggFun(t, aggs(i))
-        i += 1
-      }
-    }
-  }
-  def next() = {
-    Done
-  }
-  def close() {}
-  def reset() { parent.reset; hm.clear; open }
-}
+//   def open() {
+//     parent.open
+//     parent.foreach { t: A =>
+//       val key = grp(t)
+//       val elem = hm.getOrElseUpdate(key, new AGGRecord(key, new Array[Double](numAggs)))
+//       val aggs = elem.aggs
+//       var i: scala.Int = 0
+//       aggFuncs.foreach { aggFun =>
+//         aggs(i) = aggFun(t, aggs(i))
+//         i += 1
+//       }
+//     }
+//   }
+//   def next() = {
+//     Done
+//   }
+//   def close() {}
+//   def reset() { parent.reset; hm.clear; open }
+// }
 
 // /*@deep*/ class SortOp[A](parent: Operator[A])(orderingFunc: Function2[A, A, Int]) extends Operator[A] {
 //   val sortedTree = new TreeSet()(

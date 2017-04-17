@@ -10,8 +10,9 @@ import scala.collection.mutable.Set
 import scala.collection.mutable.TreeSet
 import scala.collection.Iterator
 import GenericEngine._
-import sc.pardis.annotations.{ deep, metadeep }
+// import sc.pardis.annotations.{ deep, metadeep }
 import sc.pardis.shallow.{ Record, DynamicCompositeRecord }
+import schema.DynamicDataRow
 
 // This is a temporary solution until we introduce dependency management and adopt policies. Not a priority now!
 // @metadeep(
@@ -104,6 +105,39 @@ import sc.pardis.shallow.{ Record, DynamicCompositeRecord }
   def next() = {
     if (iterator.hasNext) {
       iterator.next._2
+    } else {
+      NullDynamicRecord
+    }
+  }
+  def close() {}
+  def reset() { parent.reset; hm.clear; iterator = null; open }
+}
+
+// FIXME the same thing as AggOp. The appropriate logic should be implemented.
+class AggOpGeneric[A, B](parent: Operator[A], numAggs: Int)(val grp: Function1[A, B], val keyName: Option[String])(val aggFuncs: Function2[A, Double, Double]*)(aggNames: Seq[String]) extends Operator[DynamicDataRow] {
+  val hm = new HashMap[B, AGGRecord[B]]()
+  var iterator: Iterator[(B, AGGRecord[B])] = _
+
+  def open() {
+    parent.open
+    parent foreach { t: A =>
+      val key = grp(t)
+      val elem = hm.getOrElseUpdate(key, new AGGRecord(key, new Array[Double](numAggs)))
+      val aggs = elem.aggs
+      var i: scala.Int = 0
+      aggFuncs.foreach { aggFun =>
+        aggs(i) = aggFun(t, aggs(i))
+        i += 1
+      }
+    }
+    // The following if expression is for handling a corner case revealed in the 
+    // case of TPCH Query 15.
+    if (iterator == null)
+      iterator = hm.iterator
+  }
+  def next() = {
+    if (iterator.hasNext) {
+      iterator.next._2.asInstanceOf[DynamicDataRow]
     } else {
       NullDynamicRecord
     }
@@ -392,15 +426,19 @@ class HashJoinAnti[A, B, C](val leftParent: Operator[A], val rightParent: Operat
 }
 
 /*@deep*/
-class ViewOp[A](parent: Operator[A]) extends Operator[A] {
+class ViewOp[A: Manifest](parent: Operator[A]) extends Operator[A] {
   var idx = 0
   var size = 0
-  val table = ArrayBuffer[A]()
+  val table = new Array[A](48000000)
 
   def open() = {
     parent.open
-    parent foreach { t: A => { table.append(t) } }
-    size = table.size
+    parent foreach { t: A =>
+      {
+        table(size) = t
+        size += 1
+      }
+    }
   }
   def next() = {
     if (idx < size) {
@@ -411,6 +449,7 @@ class ViewOp[A](parent: Operator[A]) extends Operator[A] {
   }
   def close() {}
   def reset() { idx = 0 }
+  def getDataArray() = table.slice(0, size)
 }
 
 /*@deep*/

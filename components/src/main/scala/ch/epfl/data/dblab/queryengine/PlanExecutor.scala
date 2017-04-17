@@ -11,7 +11,7 @@ import scala.reflect._
 import scala.util.Random
 import scala.reflect.runtime.universe._
 import scala.collection.mutable.ArrayBuffer
-import push._
+import volcano._
 import sc.pardis.shallow.{ OptimalString, Record, DynamicCompositeRecord }
 import config.Config
 

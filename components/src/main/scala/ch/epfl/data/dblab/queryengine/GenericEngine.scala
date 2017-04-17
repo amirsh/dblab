@@ -2,14 +2,14 @@ package ch.epfl.data
 package dblab
 package queryengine
 
-import sc.pardis.annotations._
+// import sc.pardis.annotations._
 import sc.pardis.shallow.OptimalString
 import queryengine.push._
 import java.util.{ Calendar, GregorianCalendar }
 
-@deep
-@needs[OptimalString]
-trait GenericEngine
+// @deep
+// @needs[OptimalString]
+// trait GenericEngine
 
 /**
  * A module which provides some core functionaly for query processing.

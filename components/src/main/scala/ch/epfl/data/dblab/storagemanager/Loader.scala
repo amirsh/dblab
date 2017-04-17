@@ -3,7 +3,7 @@ package dblab
 package storagemanager
 
 import utils.Utilities._
-import sc.pardis.annotations.{ deep, metadeep, dontLift, dontInline, needs, ::, onlineInliner, noDeepExt }
+// import sc.pardis.annotations.{ deep, metadeep, dontLift, dontInline, needs, ::, onlineInliner, noDeepExt }
 import queryengine._
 import schema._
 import config._
@@ -13,34 +13,31 @@ import scala.reflect._
 import scala.reflect.runtime.universe._
 import scala.reflect.runtime.currentMirror
 
-@metadeep(
-  folder = "",
-  header = """import ch.epfl.data.dblab.deep._
-import ch.epfl.data.dblab.deep.queryengine._
-import ch.epfl.data.dblab.deep.schema._
-import ch.epfl.data.dblab.schema._
-import scala.reflect._
-""",
-  component = "",
-  thisComponent = "")
-@needs[FastScanner :: Array[_] :: OptimalString :: String :: Numeric[_] :: DynamicDataRow]
-@deep
-@noDeepExt
-@onlineInliner
-trait Loader
+// @metadeep(
+//   folder = "",
+//   header = """import ch.epfl.data.dblab.deep._
+// import ch.epfl.data.dblab.deep.queryengine._
+// import ch.epfl.data.dblab.deep.schema._
+// import ch.epfl.data.dblab.schema._
+// import scala.reflect._
+// """,
+//   component = "",
+//   thisComponent = "")
+// @needs[FastScanner :: Array[_] :: OptimalString :: String :: Numeric[_] :: DynamicDataRow]
+// @deep
+// @noDeepExt
+// @onlineInliner
+// trait Loader
 
 /**
  * A module that defines data loading facilities.
  */
 object Loader {
 
-  @dontLift
   val cachedTables = collection.mutable.HashMap[Table, Array[_]]()
 
-  @dontInline
   def getFullPath(fileName: String): String = Config.datapath + fileName
 
-  @dontInline
   def loadString(size: Int, s: FastScanner): OptimalString = {
     val NAME = new Array[Byte](size + 1)
     s.next(NAME)
@@ -48,7 +45,6 @@ object Loader {
     // s.next_string
   }
 
-  @dontInline
   def fileLineCount(file: String) = {
     import scala.sys.process._;
     Integer.parseInt(((("wc -l " + file) #| "awk {print($1)}").!!).replaceAll("\\s+$", ""))
@@ -63,7 +59,6 @@ object Loader {
   // TODO
   // def loadTable[R](schema: Schema)(implicit t: TypeTag[R]): Array[R] = {
 
-  @dontInline
   def loadUntypedTable(table: Table): Array[DynamicDataRow] = {
     if (Config.cacheLoading && cachedTables.contains(table)) {
       System.out.println(s"Loading cached ${table.name}!")
@@ -100,7 +95,6 @@ object Loader {
     //TODO update statistics
   }
 
-  @dontInline
   def loadTable[R](table: Table)(implicit c: ClassTag[R]): Array[R] = {
     if (Config.cacheLoading && cachedTables.contains(table)) {
       System.out.println(s"Loading cached ${table.name}!")

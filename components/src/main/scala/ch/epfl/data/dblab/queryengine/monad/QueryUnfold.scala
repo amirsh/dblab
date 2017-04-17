@@ -3,7 +3,7 @@ package dblab
 package queryengine
 package monad
 
-import sc.pardis.annotations.{ deep, needsCircular, dontLift, needs, reflect, pure, transformation }
+// import sc.pardis.annotations.{ deep, needsCircular, dontLift, needs, reflect, pure, transformation }
 import sc.pardis.shallow.{ Record, DynamicCompositeRecord }
 import push.MultiMap
 import scala.collection.mutable.MultiMap
@@ -19,14 +19,14 @@ abstract class QueryUnfold[T, Source] { self =>
   def atEnd(s: Source): Boolean
   def next(s: Source): (T, Source)
 
-  @pure def map[S](f: T => S): QueryUnfold[S, Source] = new QueryUnfold[S, Source] {
+  def map[S](f: T => S): QueryUnfold[S, Source] = new QueryUnfold[S, Source] {
     def source = self.source
     def atEnd(s: Source): Boolean = self.atEnd(s)
     def next(s: Source): (S, Source) = self.next(s) match {
       case (e, sp) => (f(e), sp)
     }
   }
-  @pure def filter(p: T => Boolean): QueryUnfold[T, Source] = new QueryUnfold[T, Source] {
+  def filter(p: T => Boolean): QueryUnfold[T, Source] = new QueryUnfold[T, Source] {
     def zeroValue[TP]: TP = null.asInstanceOf[TP]
     var hd = zeroValue[T]
     var curTail = zeroValue[Source]
@@ -55,7 +55,7 @@ abstract class QueryUnfold[T, Source] { self =>
     }
     def next(s: Source): (T, Source) = (hd, curTail)
   }
-  // @pure def foldLeft[S](z: S)(f: (S, T) => S): S = {
+  // def foldLeft[S](z: S)(f: (S, T) => S): S = {
   //   var res = z
   //   foreach(e => res = f(res, e))
   //   res
@@ -69,23 +69,23 @@ abstract class QueryUnfold[T, Source] { self =>
     }
   }
 
-  @pure def sum(implicit num: Numeric[T]): T = {
+  def sum(implicit num: Numeric[T]): T = {
     var res = num.zero
     foreach(e => res = num.plus(res, e))
     res
   }
-  @pure def count: Int = {
+  def count: Int = {
     var size = 0
     foreach(e => size += 1)
     size
   }
-  @pure def avg(implicit num: Fractional[T]): T =
+  def avg(implicit num: Fractional[T]): T =
     num.div(sum, num.fromInt(count))
-  @pure def groupBy[K](par: T => K): GroupedQueryUnfold[K, T, Source] =
+  def groupBy[K](par: T => K): GroupedQueryUnfold[K, T, Source] =
     new GroupedQueryUnfold(this, par)
-  // @pure def filteredGroupBy[K](pred: T => Boolean, par: T => K): GroupedQueryUnfold[K, T] =
+  // def filteredGroupBy[K](pred: T => Boolean, par: T => K): GroupedQueryUnfold[K, T] =
   //   filter(pred).groupBy(par)
-  @dontLift def sortBy[S](f: T => S)(implicit ord: Ordering[S]): QueryUnfold[T, Int] = new QueryUnfold[T, Int] {
+  def sortBy[S](f: T => S)(implicit ord: Ordering[S]): QueryUnfold[T, Int] = new QueryUnfold[T, Int] {
     val (treeSet, size) = {
       val treeSet = new TreeSet()(
         new Ordering[T] {
@@ -127,10 +127,10 @@ abstract class QueryUnfold[T, Source] { self =>
     }
   }
 
-  // @pure def sortByReverse[S](f: T => S)(implicit ord: Ordering[S]): Query[T] =
+  // def sortByReverse[S](f: T => S)(implicit ord: Ordering[S]): Query[T] =
   //   new Query(underlying.sortBy(f).reverse)
 
-  // @pure def take(i: Int): QueryUnfold[T] = (k: T => Unit) => {
+  // def take(i: Int): QueryUnfold[T] = (k: T => Unit) => {
   //   var count = 0
   //   foreach(e => {
   //     if (count < i) {
@@ -140,7 +140,7 @@ abstract class QueryUnfold[T, Source] { self =>
   //   })
   // }
 
-  @pure def minBy[S](f: T => S)(implicit ord: Ordering[S]): T = {
+  def minBy[S](f: T => S)(implicit ord: Ordering[S]): T = {
     var minResult: T = null.asInstanceOf[T]
     foreach(e => {
       if (minResult == null || ord.compare(f(minResult), f(e)) > 0) {
@@ -170,12 +170,12 @@ abstract class QueryUnfold[T, Source] { self =>
     printf("(%d rows)\n", rows)
   }
 
-  @pure def materialize: QueryUnfold[T, Int] = {
+  def materialize: QueryUnfold[T, Int] = {
     val arr = getList.asInstanceOf[List[Any]].toArray.asInstanceOf[Array[T]]
     QueryUnfold(arr)
   }
 
-  @pure def getList: List[T] = {
+  def getList: List[T] = {
     var res = ArrayBuffer[T]()
     for (e <- this) {
       res += e
@@ -185,7 +185,7 @@ abstract class QueryUnfold[T, Source] { self =>
 }
 
 object QueryUnfold {
-  @dontLift def apply[T](arr: Array[T]): QueryUnfold[T, Int] = new QueryUnfold[T, Int] {
+  def apply[T](arr: Array[T]): QueryUnfold[T, Int] = new QueryUnfold[T, Int] {
     def source = 0
 
     def atEnd(ts: Int) = ts >= arr.length
@@ -380,7 +380,7 @@ class GroupedQueryUnfold[K, V, Source1](underlying: QueryUnfold[V, Source1], par
     // ???
   }
 
-  @pure def mapValues[S](func: QueryUnfold[V, Int] => S): QueryUnfold[(K, S), Int] = new QueryUnfold[(K, S), Int] {
+  def mapValues[S](func: QueryUnfold[V, Int] => S): QueryUnfold[(K, S), Int] = new QueryUnfold[(K, S), Int] {
 
     val (groupByResult, partitions) = {
       val groupByResult = getGroupByResult

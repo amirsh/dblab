@@ -3,7 +3,7 @@ package dblab
 package queryengine
 package monad
 
-import sc.pardis.annotations.{ deep, needsCircular, dontLift, needs, reflect, pure, transformation }
+// import sc.pardis.annotations.{ deep, needsCircular, dontLift, needs, reflect, pure, transformation }
 import sc.pardis.shallow.{ Record, DynamicCompositeRecord }
 import push.MultiMap
 import scala.collection.mutable.MultiMap
@@ -31,7 +31,7 @@ abstract class QueryIterator[T] { self =>
     }
     elem
   }
-  @pure def map[S](f: T => S): QueryIterator[S] = destroy { next =>
+  def map[S](f: T => S): QueryIterator[S] = destroy { next =>
     iterate { () =>
       val elem = next()
       if (elem == NULL)
@@ -40,7 +40,7 @@ abstract class QueryIterator[T] { self =>
         f(elem)
     }
   }
-  @pure def filter(p: T => Boolean): QueryIterator[T] = destroy { next =>
+  def filter(p: T => Boolean): QueryIterator[T] = destroy { next =>
     iterate { () =>
       findFirst(p, next)
     }
@@ -55,7 +55,7 @@ abstract class QueryIterator[T] { self =>
     }
   }
 
-  @pure def foldLeft[S](z: S)(f: (S, T) => S): S = {
+  def foldLeft[S](z: S)(f: (S, T) => S): S = {
     var res = z
     for (e <- this) {
       res = f(res, e)
@@ -63,25 +63,25 @@ abstract class QueryIterator[T] { self =>
     res
   }
 
-  @pure def sum(implicit num: Numeric[T]): T = {
+  def sum(implicit num: Numeric[T]): T = {
     var res = num.zero
     for (e <- this) {
       res = num.plus(res, e)
     }
     res
   }
-  @pure def count: Int = {
+  def count: Int = {
     var size = 0
     for (e <- this) {
       size += 1
     }
     size
   }
-  @pure def avg(implicit num: Fractional[T]): T =
+  def avg(implicit num: Fractional[T]): T =
     num.div(sum, num.fromInt(count))
-  @pure def groupBy[K](par: T => K): GroupedQueryIterator[K, T] =
+  def groupBy[K](par: T => K): GroupedQueryIterator[K, T] =
     new GroupedQueryIterator(this, par)
-  @pure def filteredGroupBy[K](pred: T => Boolean, par: T => K): GroupedQueryIterator[K, T] =
+  def filteredGroupBy[K](pred: T => Boolean, par: T => K): GroupedQueryIterator[K, T] =
     filter(pred).groupBy(par)
 
   def sortBy[S](f: T => S)(implicit ord: Ordering[S]): QueryIterator[T] = {
@@ -117,10 +117,10 @@ abstract class QueryIterator[T] { self =>
     }
   }
 
-  // @pure def sortByReverse[S](f: T => S)(implicit ord: Ordering[S]): Query[T] =
+  // def sortByReverse[S](f: T => S)(implicit ord: Ordering[S]): Query[T] =
   //   new Query(underlying.sortBy(f).reverse)
 
-  // @pure def take(i: Int): QueryIterator[T] = (k: T => Unit) => {
+  // def take(i: Int): QueryIterator[T] = (k: T => Unit) => {
   //   var count = 0
   //   foreach(e => {
   //     if (count < i) {
@@ -130,7 +130,7 @@ abstract class QueryIterator[T] { self =>
   //   })
   // }
 
-  @pure def minBy[S](f: T => S)(implicit ord: Ordering[S]): T = {
+  def minBy[S](f: T => S)(implicit ord: Ordering[S]): T = {
     var minResult: T = null.asInstanceOf[T]
     for (e <- this) {
       if (minResult == null || ord.compare(f(minResult), f(e)) > 0) {
@@ -162,12 +162,12 @@ abstract class QueryIterator[T] { self =>
     printf("(%d rows)\n", rows)
   }
 
-  @pure def materialize: QueryIterator[T] = {
+  def materialize: QueryIterator[T] = {
     val arr = getList.asInstanceOf[List[Any]].toArray.asInstanceOf[Array[T]]
     QueryIterator(arr)
   }
 
-  @pure def getList: List[T] = {
+  def getList: List[T] = {
     var res = ArrayBuffer[T]()
     for (e <- this) {
       res += e
@@ -178,7 +178,7 @@ abstract class QueryIterator[T] { self =>
 
 object QueryIterator {
   def NULL[S]: S = null.asInstanceOf[S]
-  @dontLift def apply[T](arr: Array[T]): QueryIterator[T] = new QueryIterator[T] {
+  def apply[T](arr: Array[T]): QueryIterator[T] = new QueryIterator[T] {
     var index = 0
     override def destroy[S](consumer: (() => T) => S): S = {
       consumer { () =>
@@ -353,7 +353,7 @@ class GroupedQueryIterator[K, V](underlying: QueryIterator[V], par: V => K) {
     // ???
   }
 
-  @pure def mapValues[S](func: QueryIterator[V] => S): QueryIterator[(K, S)] = {
+  def mapValues[S](func: QueryIterator[V] => S): QueryIterator[(K, S)] = {
 
     val (groupByResult, partitions) = {
       val groupByResult = getGroupByResult

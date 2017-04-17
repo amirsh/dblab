@@ -6,7 +6,7 @@ import java.io.FileReader
 import java.io.BufferedReader
 import java.text.SimpleDateFormat
 
-import sc.pardis.annotations._
+// import sc.pardis.annotations._
 import sc.pardis.shallow.OptimalString
 
 /**
@@ -14,14 +14,14 @@ import sc.pardis.shallow.OptimalString
  *
  * @param filename the input file name
  */
-@needs[OptimalString]
-@deep
+// @needs[OptimalString]
+// @deep
 class FastScanner(filename: String) {
-  @dontLift private var byteRead: Int = 0
-  @dontLift private var intDigits: Int = 0
-  @dontLift private var delimiter: Char = '|'
-  @dontLift private val br: BufferedReader = new BufferedReader(new FileReader(filename))
-  @dontLift private val sdf = new SimpleDateFormat("yyyy-MM-dd");
+  private var byteRead: Int = 0
+  private var intDigits: Int = 0
+  private var delimiter: Char = '|'
+  private val br: BufferedReader = new BufferedReader(new FileReader(filename))
+  private val sdf = new SimpleDateFormat("yyyy-MM-dd");
 
   def next_int() = {
     var number = 0
@@ -83,7 +83,7 @@ class FastScanner(filename: String) {
     cnt
   }
 
-  @dontLift private val buffer = new Array[Byte](1 << 10)
+  private val buffer = new Array[Byte](1 << 10)
 
   def next_string: OptimalString = {
     java.util.Arrays.fill(buffer, 0.toByte)
