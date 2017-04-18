@@ -9,3 +9,7 @@ addSbtPlugin("ch.epfl.data" % "sc-purgatory-plugin" % "0.1.4-SNAPSHOT")
 resolvers += "jgit-repo" at "http://download.eclipse.org/jgit/maven"
 
 addSbtPlugin("com.typesafe.sbt" % "sbt-ghpages" % "0.5.4")
+
+addSbtPlugin("org.scala-native" % "sbt-crossproject" % "0.1.0") // (1)
+
+addSbtPlugin("org.scala-native" % "sbt-scala-native" % "0.1.0") // (2)
